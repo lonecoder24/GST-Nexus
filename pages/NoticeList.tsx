@@ -199,12 +199,121 @@ const NoticeList: React.FC = () => {
 
   const downloadTemplate = () => {
     const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.json_to_sheet([{ gstin: "27ABCDE1234F1Z5", noticeNumber: "DIN...", noticeType: "ASMT-10", demandAmount: 50000 }]);
+    let data: any[] = [];
+    let filename = '';
+
+    if (importType === 'notice') {
+        data = [{ gstin: "27ABCDE...", noticeNumber: "DIN123...", noticeType: "ASMT-10", section: "61", period: "2022-23", dateOfIssue: "YYYY-MM-DD", dueDate: "YYYY-MM-DD", demandAmount: 100000, riskLevel: "High", status: "Received", arn: "AD27..." }];
+        filename = "GSTNexus_Import_Notices.xlsx";
+    } else if (importType === 'defect') {
+        data = [{ noticeNumber: "DIN123...", defectType: "ITC Mismatch", section: "16(2)(c)", description: "Mismatch in 3B vs 2A", taxDemand: 50000, interestDemand: 5000, penaltyDemand: 0 }];
+        filename = "GSTNexus_Import_Defects.xlsx";
+    } else if (importType === 'payment') {
+        data = [{ noticeNumber: "DIN123...", challanNumber: "CPIN...", paymentDate: "YYYY-MM-DD", amount: 10000, majorHead: "IGST", minorHead: "Tax", bankName: "HDFC" }];
+        filename = "GSTNexus_Import_Payments.xlsx";
+    }
+
+    const ws = XLSX.utils.json_to_sheet(data);
     XLSX.utils.book_append_sheet(wb, ws, "Template");
-    XLSX.writeFile(wb, "Import_Template.xlsx");
+    XLSX.writeFile(wb, filename);
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => { /* ... existing logic ... */ };
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      try {
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const data = XLSX.utils.sheet_to_json<any>(ws);
+
+        let success = 0;
+        let errors = 0;
+
+        if (importType === 'notice') {
+            for (const row of data) {
+                if (row.gstin && row.noticeNumber) {
+                    const exists = await db.notices.where('noticeNumber').equals(row.noticeNumber).first();
+                    if (!exists) {
+                        await db.notices.add({
+                            gstin: row.gstin,
+                            noticeNumber: row.noticeNumber,
+                            noticeType: row.noticeType || 'General',
+                            section: row.section || '',
+                            period: row.period || '',
+                            dateOfIssue: row.dateOfIssue || new Date().toISOString().split('T')[0],
+                            dueDate: row.dueDate || '',
+                            receivedDate: new Date().toISOString().split('T')[0],
+                            issuingAuthority: row.issuingAuthority || '',
+                            demandAmount: parseFloat(row.demandAmount) || 0,
+                            riskLevel: row.riskLevel || RiskLevel.MEDIUM,
+                            status: row.status || NoticeStatus.RECEIVED,
+                            arn: row.arn || '',
+                            description: row.description || ''
+                        });
+                        success++;
+                    } else {
+                        errors++;
+                    }
+                }
+            }
+        } else if (importType === 'defect') {
+            for (const row of data) {
+                if (row.noticeNumber && row.defectType) {
+                    const notice = await db.notices.where('noticeNumber').equals(row.noticeNumber).first();
+                    if (notice) {
+                        await db.defects.add({
+                            noticeId: notice.id!,
+                            defectType: row.defectType,
+                            section: row.section || '',
+                            description: row.description || '',
+                            taxDemand: parseFloat(row.taxDemand) || 0,
+                            interestDemand: parseFloat(row.interestDemand) || 0,
+                            penaltyDemand: parseFloat(row.penaltyDemand) || 0,
+                            igst: { tax: 0, interest: 0, penalty: 0, lateFee: 0, others: 0 },
+                            cgst: { tax: 0, interest: 0, penalty: 0, lateFee: 0, others: 0 },
+                            sgst: { tax: 0, interest: 0, penalty: 0, lateFee: 0, others: 0 },
+                            cess: { tax: 0, interest: 0, penalty: 0, lateFee: 0, others: 0 }
+                        });
+                        success++;
+                    } else errors++;
+                }
+            }
+        } else if (importType === 'payment') {
+            for (const row of data) {
+                if (row.noticeNumber && row.amount) {
+                    const notice = await db.notices.where('noticeNumber').equals(row.noticeNumber).first();
+                    if (notice) {
+                        await db.payments.add({
+                            noticeId: notice.id!,
+                            amount: parseFloat(row.amount),
+                            paymentDate: row.paymentDate || new Date().toISOString().split('T')[0],
+                            challanNumber: row.challanNumber || 'Unknown',
+                            majorHead: row.majorHead || 'IGST',
+                            minorHead: row.minorHead || 'Tax',
+                            bankName: row.bankName || '',
+                            paymentReferenceNumber: ''
+                        });
+                        success++;
+                    } else errors++;
+                }
+            }
+        }
+
+        alert(`Import Complete. Success: ${success}, Skipped/Failed: ${errors}`);
+        setShowImportModal(false);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        
+      } catch (err) {
+        console.error(err);
+        alert('Error parsing Excel file. Ensure columns match the template.');
+      }
+    };
+    reader.readAsBinaryString(file);
+  };
 
   const groupedNotices = (): Record<string, Notice[]> => {
     if (!notices) return {};

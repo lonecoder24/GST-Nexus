@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
 import { ReconciliationRecord, ReconciliationRow } from '../types';
-import { FileDown, Scale, Plus, ArrowLeft, Save, Trash2, Edit, Calculator, FileText, Layers, TrendingUp, AlertCircle, Upload } from 'lucide-react';
+import { FileDown, Scale, Plus, ArrowLeft, Save, Trash2, Edit, Calculator, FileText, Layers, TrendingUp, AlertCircle, Upload, Download } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { useAuth } from '../contexts/AuthContext';
 import { Link } from 'react-router-dom';
@@ -88,6 +88,19 @@ const Reconciliation: React.FC = () => {
             newRows[index].diff = newRows[index].sourceA - newRows[index].sourceB;
         }
         setFormData({ ...formData, rows: newRows });
+    };
+
+    const downloadTemplate = () => {
+        const rows = initialRows.map(r => ({
+            Period: r.period,
+            Portal: 0,
+            Books: 0,
+            Remarks: ''
+        }));
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.json_to_sheet(rows);
+        XLSX.utils.book_append_sheet(wb, ws, "Reconciliation_Template");
+        XLSX.writeFile(wb, "GSTNexus_Reconciliation_Template.xlsx");
     };
 
     const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -271,6 +284,9 @@ const Reconciliation: React.FC = () => {
             <div className="flex items-center justify-between">
                 <button onClick={() => setView('list')} className="flex items-center gap-2 text-slate-500 hover:text-slate-800"><ArrowLeft size={18} /> Back to List</button>
                 <div className="flex gap-2">
+                    <button onClick={downloadTemplate} className="bg-white border border-slate-300 text-slate-700 px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-slate-50 shadow-sm">
+                        <Download size={18} /> Template
+                    </button>
                     <button onClick={() => fileInputRef.current?.click()} className="bg-white border border-slate-300 text-slate-700 px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-slate-50 shadow-sm">
                         <Upload size={18} /> Import Excel
                     </button>

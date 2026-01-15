@@ -47,7 +47,7 @@ const TaxpayerList: React.FC = () => {
     }]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Taxpayers");
-    XLSX.writeFile(wb, "Taxpayer_Import_Template.xlsx");
+    XLSX.writeFile(wb, "GSTNexus_Import_Taxpayers.xlsx");
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
