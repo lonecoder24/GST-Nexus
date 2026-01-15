@@ -22,6 +22,23 @@ export enum UserRole {
   ASSOCIATE = 'Associate'
 }
 
+export type PermissionType = 'view_notices' | 'create_notices' | 'edit_notices' | 'delete_notices' | 'manage_users' | 'export_data';
+
+export const ALL_PERMISSIONS: PermissionType[] = [
+  'view_notices', 
+  'create_notices', 
+  'edit_notices', 
+  'delete_notices', 
+  'manage_users', 
+  'export_data'
+];
+
+export const DEFAULT_ROLE_PERMISSIONS: Record<string, PermissionType[]> = {
+  [UserRole.ADMIN]: ['view_notices', 'create_notices', 'edit_notices', 'delete_notices', 'manage_users', 'export_data'],
+  [UserRole.SENIOR_ASSOCIATE]: ['view_notices', 'create_notices', 'edit_notices', 'export_data'],
+  [UserRole.ASSOCIATE]: ['view_notices']
+};
+
 export interface User {
   id?: number;
   username: string;
@@ -45,7 +62,7 @@ export interface Notification {
 
 export interface AppConfig {
   id?: number;
-  key: string; // 'notice_types', 'notice_statuses', 'user_roles'
+  key: string; // 'notice_types', 'notice_statuses', 'user_roles', 'perm:<role>'
   value: string[]; // JSON array of strings
 }
 
@@ -80,6 +97,12 @@ export interface Notice {
   assignedTo?: string; // Team member name (username)
   tags?: string[];
   isOverdue?: boolean; // Computed
+  
+  // Personal Hearing Details
+  hearingDate?: string;
+  hearingTime?: string;
+  hearingVenue?: string;
+  hearingOutcome?: string;
 }
 
 export interface TaxHeadValues {
@@ -132,7 +155,7 @@ export interface PaymentLog {
 
 export interface AuditLog {
   id?: number;
-  entityType: 'Notice' | 'Payment' | 'Taxpayer' | 'System' | 'Auth' | 'Defect' | 'Reconciliation';
+  entityType: 'Notice' | 'Payment' | 'Taxpayer' | 'System' | 'Auth' | 'Defect' | 'Reconciliation' | 'Document';
   entityId: number | string;
   action: 'Create' | 'Update' | 'Delete' | 'StatusChange' | 'Login';
   timestamp: string;
@@ -154,8 +177,11 @@ export interface DocumentMeta {
   noticeId: number;
   fileName: string;
   fileType: string;
+  category: 'Notice Scan' | 'Evidence' | 'Reconciliation' | 'Ledger' | 'Other';
   uploadDate: string;
   size: number;
+  fileData?: Blob; // Storing the file content for offline access
+  ocrText?: string; // Extracted text for searchability
 }
 
 // Reconciliation Worksheet Types

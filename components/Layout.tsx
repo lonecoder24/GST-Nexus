@@ -1,7 +1,7 @@
 
 import React, { useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, FileText, Users, FileSpreadsheet, Settings, ShieldAlert, LogOut, Activity, Scale } from 'lucide-react';
+import { LayoutDashboard, FileText, Users, FileSpreadsheet, Settings, ShieldAlert, LogOut, Activity, Scale, Calendar } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { checkAndGenerateNotifications } from '../db';
 import NotificationCenter from './NotificationCenter';
@@ -34,6 +34,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
   const navItems = [
     { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
+    { icon: Calendar, label: 'Calendar', path: '/calendar' },
     { icon: FileText, label: 'Notices', path: '/notices' },
     { icon: Users, label: 'Taxpayers', path: '/taxpayers' },
     { icon: Scale, label: 'Reconciliation', path: '/reconciliation' },

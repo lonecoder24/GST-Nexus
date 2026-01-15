@@ -1,12 +1,14 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
-import { User } from '../types';
+import { User, PermissionType, DEFAULT_ROLE_PERMISSIONS } from '../types';
 
 interface AuthContextType {
   user: User | null;
   login: (username: string, passwordHash: string) => Promise<boolean>;
   logout: () => void;
   isLoading: boolean;
+  checkPermission: (permission: PermissionType) => boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -14,6 +16,9 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+
+  // Load permission configurations dynamically
+  const permissionConfigs = useLiveQuery(() => db.appConfig.where('key').startsWith('perm:').toArray());
 
   useEffect(() => {
     // Check local storage for session (simple persistence)
@@ -51,8 +56,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.removeItem('gst_nexus_user');
   };
 
+  const checkPermission = (permission: PermissionType): boolean => {
+      if (!user) return false;
+      
+      // Use dynamic DB permissions if available, otherwise fall back to defaults
+      if (permissionConfigs && permissionConfigs.length > 0) {
+          const roleConfig = permissionConfigs.find(c => c.key === `perm:${user.role}`);
+          if (roleConfig) {
+              return roleConfig.value.includes(permission);
+          }
+      }
+
+      // Fallback
+      const defaults = DEFAULT_ROLE_PERMISSIONS[user.role];
+      return defaults ? defaults.includes(permission) : false;
+  };
+
   return (
-    <AuthContext.Provider value={{ user, login, logout, isLoading }}>
+    <AuthContext.Provider value={{ user, login, logout, isLoading, checkPermission }}>
       {children}
     </AuthContext.Provider>
   );

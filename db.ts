@@ -1,6 +1,6 @@
 
 import Dexie, { Table } from 'dexie';
-import { Taxpayer, Notice, PaymentLog, AuditLog, TeamTimeSheet, DocumentMeta, RiskLevel, NoticeStatus, User, Notification, AppConfig, UserRole, NoticeDefect, ReconciliationRecord } from './types';
+import { Taxpayer, Notice, PaymentLog, AuditLog, TeamTimeSheet, DocumentMeta, RiskLevel, NoticeStatus, User, Notification, AppConfig, UserRole, NoticeDefect, ReconciliationRecord, DEFAULT_ROLE_PERMISSIONS } from './types';
 
 export class GSTDatabase extends Dexie {
   taxpayers!: Table<Taxpayer>;
@@ -18,14 +18,14 @@ export class GSTDatabase extends Dexie {
   constructor() {
     super('GSTNexusDB');
     
-    // Version 7: Added reconciliations table
-    (this as any).version(7).stores({
+    // Version 9: Added hearingDate to notices index
+    (this as any).version(9).stores({
       taxpayers: '++id, &gstin, tradeName',
-      notices: '++id, gstin, noticeNumber, arn, noticeType, status, dueDate, riskLevel, assignedTo',
+      notices: '++id, gstin, noticeNumber, arn, noticeType, status, dueDate, riskLevel, assignedTo, hearingDate',
       payments: '++id, noticeId, defectId, challanNumber, paymentDate, majorHead',
       auditLogs: '++id, entityId, timestamp, entityType',
       timeSheets: '++id, noticeId, teamMember',
-      documents: '++id, noticeId',
+      documents: '++id, noticeId, category',
       users: '++id, &username, role',
       notifications: '++id, userId, isRead, createdAt, link',
       appConfig: '++id, &key',
@@ -106,6 +106,17 @@ export const seedDatabase = async () => {
             UserRole.ASSOCIATE
         ]
     });
+  }
+
+  // Seed Permissions if they don't exist
+  const permCount = await db.appConfig.where('key').startsWith('perm:').count();
+  if (permCount === 0) {
+      for (const [role, perms] of Object.entries(DEFAULT_ROLE_PERMISSIONS)) {
+          await db.appConfig.add({
+              key: `perm:${role}`,
+              value: perms
+          });
+      }
   }
 
   const count = await db.taxpayers.count();
@@ -191,7 +202,6 @@ export const checkAndGenerateNotifications = async () => {
             }
 
             if (type) {
-                // Check if notification already exists for today to avoid spam
                 const existing = await db.notifications
                     .where('link').equals(`/notices/${notice.id}`)
                     .and(n => {
@@ -201,7 +211,6 @@ export const checkAndGenerateNotifications = async () => {
                     .first();
 
                 if (!existing) {
-                    // Find user ID if assigned
                     let userId: number | undefined = undefined;
                     if (notice.assignedTo) {
                         const user = await db.users.where('username').equals(notice.assignedTo).first();

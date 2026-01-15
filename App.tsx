@@ -12,6 +12,7 @@ import Login from './pages/Login';
 import AdminSettings from './pages/AdminSettings';
 import Reports from './pages/Reports';
 import Reconciliation from './pages/Reconciliation';
+import CalendarView from './pages/CalendarView';
 import { AuthProvider } from './contexts/AuthContext';
 import { seedDatabase } from './db';
 
@@ -29,6 +30,7 @@ const App: React.FC = () => {
             <Route path="/login" element={<Login />} />
             <Route path="/" element={<Dashboard />} />
             
+            <Route path="/calendar" element={<CalendarView />} />
             <Route path="/notices" element={<NoticeList />} />
             <Route path="/notices/:id" element={<NoticeDetail />} />
             

@@ -147,7 +147,7 @@ const Reconciliation: React.FC = () => {
             } as ReconciliationRecord;
 
             if (formData.id) {
-                await db.reconciliations.update(formData.id, dataToSave);
+                await db.reconciliations.update(formData.id, dataToSave as any);
                 await db.auditLogs.add({
                     entityType: 'Reconciliation', entityId: formData.id, action: 'Update', timestamp: new Date().toISOString(),
                     user: user?.username || 'System', details: `Updated ${formData.type} for ${formData.gstin}`
