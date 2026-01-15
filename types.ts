@@ -16,6 +16,14 @@ export enum RiskLevel {
   CRITICAL = 'Critical'
 }
 
+export enum HearingStatus {
+  SCHEDULED = 'Scheduled',
+  ADJOURNED = 'Adjourned',
+  HEARD = 'Heard - Order Reserved',
+  CONCLUDED = 'Concluded',
+  CANCELLED = 'Cancelled'
+}
+
 export enum UserRole {
   ADMIN = 'Admin',
   SENIOR_ASSOCIATE = 'Senior Associate',
@@ -98,11 +106,23 @@ export interface Notice {
   tags?: string[];
   isOverdue?: boolean; // Computed
   
-  // Personal Hearing Details
+  // Legacy fields (kept for migration safety, but UI will use hearings table)
   hearingDate?: string;
   hearingTime?: string;
   hearingVenue?: string;
   hearingOutcome?: string;
+}
+
+export interface Hearing {
+  id?: number;
+  noticeId: number;
+  date: string;
+  time: string;
+  venue: string;
+  type: 'Personal Hearing' | 'Adjournment' | 'Final Hearing';
+  attendees?: string; // Who attended (Staff/Client)
+  status: HearingStatus;
+  minutes?: string; // Outcome/Notes
 }
 
 export interface TaxHeadValues {
@@ -155,7 +175,7 @@ export interface PaymentLog {
 
 export interface AuditLog {
   id?: number;
-  entityType: 'Notice' | 'Payment' | 'Taxpayer' | 'System' | 'Auth' | 'Defect' | 'Reconciliation' | 'Document';
+  entityType: 'Notice' | 'Payment' | 'Taxpayer' | 'System' | 'Auth' | 'Defect' | 'Reconciliation' | 'Document' | 'Hearing';
   entityId: number | string;
   action: 'Create' | 'Update' | 'Delete' | 'StatusChange' | 'Login';
   timestamp: string;

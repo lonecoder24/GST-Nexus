@@ -1,7 +1,7 @@
 
 import React, { useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, FileText, Users, FileSpreadsheet, Settings, ShieldAlert, LogOut, Activity, Scale, Calendar } from 'lucide-react';
+import { LayoutDashboard, FileText, Users, FileSpreadsheet, Settings, LogOut, Activity, Scale, Calendar } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { checkAndGenerateNotifications } from '../db';
 import NotificationCenter from './NotificationCenter';
@@ -40,7 +40,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     { icon: Scale, label: 'Reconciliation', path: '/reconciliation' },
     { icon: Activity, label: 'Audit Logs', path: '/audit-logs' },
     { icon: FileSpreadsheet, label: 'Reports', path: '/reports' },
-    { icon: ShieldAlert, label: 'Risk Matrix', path: '/risks' },
   ];
 
   const handleLogout = () => {

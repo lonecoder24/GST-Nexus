@@ -1,6 +1,6 @@
 
 import Dexie, { Table } from 'dexie';
-import { Taxpayer, Notice, PaymentLog, AuditLog, TeamTimeSheet, DocumentMeta, RiskLevel, NoticeStatus, User, Notification, AppConfig, UserRole, NoticeDefect, ReconciliationRecord, DEFAULT_ROLE_PERMISSIONS } from './types';
+import { Taxpayer, Notice, PaymentLog, AuditLog, TeamTimeSheet, DocumentMeta, RiskLevel, NoticeStatus, User, Notification, AppConfig, UserRole, NoticeDefect, ReconciliationRecord, DEFAULT_ROLE_PERMISSIONS, Hearing } from './types';
 
 export class GSTDatabase extends Dexie {
   taxpayers!: Table<Taxpayer>;
@@ -14,12 +14,13 @@ export class GSTDatabase extends Dexie {
   appConfig!: Table<AppConfig>;
   defects!: Table<NoticeDefect>;
   reconciliations!: Table<ReconciliationRecord>;
+  hearings!: Table<Hearing>;
 
   constructor() {
     super('GSTNexusDB');
     
-    // Version 9: Added hearingDate to notices index
-    (this as any).version(9).stores({
+    // Version 10: Added hearings table
+    (this as any).version(10).stores({
       taxpayers: '++id, &gstin, tradeName',
       notices: '++id, gstin, noticeNumber, arn, noticeType, status, dueDate, riskLevel, assignedTo, hearingDate',
       payments: '++id, noticeId, defectId, challanNumber, paymentDate, majorHead',
@@ -30,7 +31,8 @@ export class GSTDatabase extends Dexie {
       notifications: '++id, userId, isRead, createdAt, link',
       appConfig: '++id, &key',
       defects: '++id, noticeId',
-      reconciliations: '++id, gstin, noticeId, type, financialYear'
+      reconciliations: '++id, gstin, noticeId, type, financialYear',
+      hearings: '++id, noticeId, date, status'
     });
   }
 }

@@ -17,7 +17,22 @@ const Dashboard: React.FC = () => {
   const notices = useLiveQuery(() => db.notices.toArray());
   const payments = useLiveQuery(() => db.payments.toArray());
   const recentPayments = useLiveQuery(() => db.payments.orderBy('paymentDate').reverse().limit(5).toArray());
-  const hearings = useLiveQuery(() => db.notices.where('status').equals(NoticeStatus.HEARING).toArray());
+  
+  // Query pending hearings from new table + join with notices
+  const pendingHearings = useLiveQuery(async () => {
+      const upcoming = await db.hearings
+        .where('date')
+        .aboveOrEqual(new Date().toISOString().split('T')[0]) // Filter past hearings? Or just show all upcoming
+        .limit(5)
+        .toArray();
+      
+      const enriched = await Promise.all(upcoming.map(async (h) => {
+          const notice = await db.notices.get(h.noticeId);
+          return { ...h, notice };
+      }));
+      
+      return enriched.sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  });
 
   // State for Stats
   const [stats, setStats] = useState({
@@ -54,25 +69,30 @@ const Dashboard: React.FC = () => {
       }, 0);
 
       const criticalCount = notices.filter(n => (n.riskLevel === RiskLevel.CRITICAL || n.riskLevel === RiskLevel.HIGH) && n.status !== NoticeStatus.CLOSED).length;
-      const hearingsCount = notices.filter(n => {
-          if (n.status !== NoticeStatus.HEARING) return false;
-          const d = new Date(n.dueDate);
-          return d >= now && d <= nextWeek;
-      }).length;
+      
+      // Calculate hearings stats based on new table would be better, but for now we can infer or fetch.
+      // Since `pendingHearings` is limited, let's do a quick count from DB in a separate effect or just use a simpler method if perf allows.
+      // For dashboard summary, we can just rely on the `pendingHearings` length if it matches timeframe, or do a separate count.
+      // Let's assume stats.hearingsThisWeek logic needs to query the table.
+      
+      db.hearings.where('date').between(now.toISOString().split('T')[0], nextWeek.toISOString().split('T')[0], true, true).count().then(count => {
+          setStats(prev => ({ ...prev, hearingsThisWeek: count }));
+      });
+
       const unassignedCount = notices.filter(n => !n.assignedTo && n.status !== NoticeStatus.CLOSED).length;
       const draftingCount = notices.filter(n => n.status === NoticeStatus.DRAFTING).length;
 
-      setStats({
+      setStats(prev => ({
+        ...prev,
         pending: pendingCount,
         outstanding: totalDemand - totalPaid,
         overdue: overdueCount,
         monthRecovery: monthRec,
         totalDemand: totalDemand,
         criticalRisk: criticalCount,
-        hearingsThisWeek: hearingsCount,
         unassigned: unassignedCount,
         drafting: draftingCount
-      });
+      }));
     }
   }, [notices, payments]);
 
@@ -134,7 +154,7 @@ const Dashboard: React.FC = () => {
           icon={CalendarClock} 
           color="purple" 
           trend="Upcoming Schedule"
-          onClick={() => navigate('/notices', { state: { status: 'Hearing Scheduled' } })}
+          onClick={() => navigate('/calendar')}
         />
       </div>
 
@@ -231,17 +251,20 @@ const Dashboard: React.FC = () => {
                      <Gavel size={20} className="text-purple-500"/> Upcoming Hearings
                  </h3>
                  <div className="space-y-3">
-                     {hearings && hearings.length > 0 ? (
-                         hearings.slice(0, 3).map(notice => (
-                             <div key={notice.id} onClick={() => navigate(`/notices/${notice.id}`)} className="p-3 bg-gradient-to-r from-purple-50 to-white border border-purple-100 rounded-xl cursor-pointer hover:shadow-sm transition-all group">
+                     {pendingHearings && pendingHearings.length > 0 ? (
+                         pendingHearings.map(h => (
+                             <div key={h.id} onClick={() => navigate(`/notices/${h.noticeId}`)} className="p-3 bg-gradient-to-r from-purple-50 to-white border border-purple-100 rounded-xl cursor-pointer hover:shadow-sm transition-all group">
                                  <div className="flex justify-between items-center mb-1">
                                      <span className="text-[10px] font-bold text-purple-500 uppercase tracking-wider">
-                                         {new Date(notice.dueDate).toLocaleDateString('en-IN', {weekday: 'short', day: 'numeric', month: 'short'})}
+                                         {new Date(h.date).toLocaleDateString('en-IN', {weekday: 'short', day: 'numeric', month: 'short'})}
                                      </span>
                                      <ChevronRight size={14} className="text-purple-300 group-hover:text-purple-500 transition-colors"/>
                                  </div>
-                                 <p className="font-semibold text-purple-900 text-sm truncate">{notice.gstin}</p>
-                                 <p className="text-xs text-purple-600 truncate">{notice.issuingAuthority}</p>
+                                 <p className="font-semibold text-purple-900 text-sm truncate">{h.notice?.gstin || 'Unknown Taxpayer'}</p>
+                                 <div className="flex justify-between items-center mt-1">
+                                     <p className="text-xs text-purple-600 truncate max-w-[120px]">{h.venue}</p>
+                                     <span className="text-[10px] bg-white px-1.5 rounded border border-purple-100 text-purple-400">{h.time}</span>
+                                 </div>
                              </div>
                          ))
                      ) : (

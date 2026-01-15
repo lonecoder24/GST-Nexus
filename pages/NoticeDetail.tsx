@@ -3,8 +3,8 @@ import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
-import { Notice, NoticeStatus, RiskLevel, NoticeDefect, PaymentLog, TaxHeadValues, Taxpayer, DocumentMeta } from '../types';
-import { Save, ArrowLeft, Clock, FileText, Plus, Trash2, IndianRupee, Wallet, Calculator, Building, HelpCircle, History, RefreshCw, FileDown, Activity, ClipboardList, ChevronUp, ChevronDown, Filter, CreditCard, AlertCircle, Phone, Mail, MapPin, Edit, X, FolderOpen, UploadCloud, ScanText, File as FileIcon, Search, Eye, Download, Scale, Gavel } from 'lucide-react';
+import { Notice, NoticeStatus, RiskLevel, NoticeDefect, PaymentLog, TaxHeadValues, Taxpayer, DocumentMeta, Hearing, HearingStatus } from '../types';
+import { Save, ArrowLeft, Clock, FileText, Plus, Trash2, IndianRupee, Wallet, Calculator, Building, HelpCircle, History, RefreshCw, FileDown, Activity, ClipboardList, ChevronUp, ChevronDown, Filter, CreditCard, AlertCircle, Phone, Mail, MapPin, Edit, X, FolderOpen, UploadCloud, ScanText, File as FileIcon, Search, Eye, Download, Scale, Gavel, Calendar } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -28,6 +28,7 @@ const formatLogDetails = (details: string): string => {
         const obj = JSON.parse(details);
         if (obj.gstin && obj.noticeNumber) return `Details updated for Notice ${obj.noticeNumber}`;
         if (obj.gstin && obj.tradeName) return `Details updated for Taxpayer ${obj.tradeName}`;
+        if (obj.date && obj.type) return `Hearing: ${obj.type} on ${obj.date}`;
         return Object.keys(obj).map(k => `${k}: ${obj[k]}`).join(', ');
     } catch (e) {
         return details;
@@ -55,7 +56,7 @@ const NoticeDetail: React.FC = () => {
   const noticeId = isNew ? undefined : parseInt(id!);
   const docInputRef = useRef<HTMLInputElement>(null);
   
-  const [activeTab, setActiveTab] = useState<'info' | 'defects' | 'documents' | 'timeline' | 'audit'>('info');
+  const [activeTab, setActiveTab] = useState<'info' | 'defects' | 'hearings' | 'documents' | 'timeline' | 'audit'>('info');
   const [loading, setLoading] = useState(!isNew);
   const [gstinError, setGstinError] = useState('');
   const [timelineFilter, setTimelineFilter] = useState<'ALL' | 'MAJOR'>('MAJOR');
@@ -78,6 +79,7 @@ const NoticeDetail: React.FC = () => {
 
   const defects = useLiveQuery(() => noticeId ? db.defects.where('noticeId').equals(noticeId).toArray() : [], [noticeId]);
   const payments = useLiveQuery(() => noticeId ? db.payments.where('noticeId').equals(noticeId).toArray() : [], [noticeId]);
+  const hearings = useLiveQuery(() => noticeId ? db.hearings.where('noticeId').equals(noticeId).sortBy('date') : [], [noticeId]);
   
   const documents = useLiveQuery(async () => {
       if (!noticeId) return [];
@@ -143,6 +145,16 @@ const NoticeDetail: React.FC = () => {
   const [currentDocForOCR, setCurrentDocForOCR] = useState<DocumentMeta | null>(null);
   const [ocrTextBuffer, setOcrTextBuffer] = useState('');
 
+  // Hearing Modal State
+  const [showHearingModal, setShowHearingModal] = useState(false);
+  const [currentHearing, setCurrentHearing] = useState<Partial<Hearing>>({
+      type: 'Personal Hearing',
+      date: new Date().toISOString().split('T')[0],
+      time: '11:00',
+      status: HearingStatus.SCHEDULED,
+      minutes: ''
+  });
+
   // Permission Checks
   const canEdit = checkPermission('edit_notices') || (isNew && checkPermission('create_notices'));
   const canDelete = checkPermission('delete_notices');
@@ -207,7 +219,6 @@ const NoticeDetail: React.FC = () => {
                 if(oldNotice.dueDate !== formData.dueDate) changes.push(`Due Date updated to ${formData.dueDate}`);
                 if(oldNotice.assignedTo !== formData.assignedTo) changes.push(`Assigned to ${formData.assignedTo || 'Unassigned'}`);
                 if(oldNotice.demandAmount !== formData.demandAmount) changes.push(`Demand Amount updated to ${formData.demandAmount}`);
-                if(oldNotice.hearingDate !== formData.hearingDate) changes.push(`Hearing Date updated to ${formData.hearingDate}`);
             }
             if (changes.length === 0) changes.push("Updated notice details");
             logDetails = changes.join(". ");
@@ -239,6 +250,7 @@ const NoticeDetail: React.FC = () => {
   };
 
   const handleUpdateInterestTillToday = async () => {
+    // ... existing interest logic ...
     if (!canEdit) return;
     const rate = parseFloat(prompt("Enter Annual Interest Rate (%)", "18") || "0");
     if (!rate) return;
@@ -363,6 +375,53 @@ const NoticeDetail: React.FC = () => {
       await db.notices.update(nId, { demandAmount: total }); setFormData(prev => ({ ...prev, demandAmount: total }));
   };
 
+  // --- HEARING LOGIC ---
+  const handleSaveHearing = async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!canEdit) return;
+      if (!currentHearing.date || !currentHearing.time) { alert("Date and Time are required"); return; }
+
+      const hearingPayload: any = {
+          noticeId: noticeId!,
+          date: currentHearing.date,
+          time: currentHearing.time,
+          venue: currentHearing.venue || 'TBD',
+          type: currentHearing.type || 'Personal Hearing',
+          attendees: currentHearing.attendees || '',
+          status: currentHearing.status || HearingStatus.SCHEDULED,
+          minutes: currentHearing.minutes || ''
+      };
+
+      if (currentHearing.id) {
+          await db.hearings.update(currentHearing.id, hearingPayload);
+          await db.auditLogs.add({ entityType: 'Hearing', entityId: currentHearing.id, action: 'Update', timestamp: new Date().toISOString(), user: user?.username || 'System', details: `Updated Hearing: ${currentHearing.date}` });
+      } else {
+          const newId = await db.hearings.add(hearingPayload);
+          await db.auditLogs.add({ entityType: 'Hearing', entityId: newId, action: 'Create', timestamp: new Date().toISOString(), user: user?.username || 'System', details: `Scheduled Hearing: ${currentHearing.date}` });
+          
+          // Optionally update notice status if it's the first hearing
+          if (formData.status !== NoticeStatus.HEARING) {
+              await db.notices.update(noticeId!, { status: NoticeStatus.HEARING });
+              setFormData(prev => ({ ...prev, status: NoticeStatus.HEARING }));
+          }
+      }
+      setShowHearingModal(false);
+      setCurrentHearing({ type: 'Personal Hearing', date: new Date().toISOString().split('T')[0], time: '11:00', status: HearingStatus.SCHEDULED, minutes: '' });
+  };
+
+  const handleEditHearing = (h: Hearing) => {
+      setCurrentHearing(h);
+      setShowHearingModal(true);
+  };
+
+  const handleDeleteHearing = async (id: number) => {
+      if(!canEdit) return;
+      if(confirm('Delete this hearing record?')) {
+          await db.hearings.delete(id);
+          await db.auditLogs.add({ entityType: 'Hearing', entityId: id, action: 'Delete', timestamp: new Date().toISOString(), user: user?.username || 'System', details: `Deleted Hearing #${id}` });
+      }
+  };
+
   // ... (Keep existing payment handlers: handleSavePaymentMatrix, handleUpdatePayment, handleDeletePayment) ...
   const handleSavePaymentMatrix = async (e: React.FormEvent) => {
       e.preventDefault();
@@ -475,7 +534,7 @@ const NoticeDetail: React.FC = () => {
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
         <div className="flex border-b border-slate-200 bg-slate-50/50">
-            {[ {id: 'info', icon: FileText, label: 'Notice Info'}, {id: 'defects', icon: Wallet, label: 'Defects & Payments'}, {id: 'documents', icon: FolderOpen, label: 'Documents & Evidence'}, {id: 'timeline', icon: History, label: 'Case Timeline'}, {id: 'audit', icon: Activity, label: 'Audit Trail'} ].map(tab => (
+            {[ {id: 'info', icon: FileText, label: 'Notice Info'}, {id: 'defects', icon: Wallet, label: 'Defects & Payments'}, {id: 'hearings', icon: Gavel, label: 'Hearings'}, {id: 'documents', icon: FolderOpen, label: 'Documents & Evidence'}, {id: 'timeline', icon: History, label: 'Case Timeline'}, {id: 'audit', icon: Activity, label: 'Audit Trail'} ].map(tab => (
                  <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} disabled={isNew && tab.id !== 'info'} className={`flex-1 py-4 text-sm font-medium border-b-2 transition-colors flex items-center justify-center gap-2 ${activeTab === tab.id ? 'border-blue-500 text-blue-600 bg-white' : 'border-transparent text-slate-500 hover:bg-slate-100'} ${(isNew && tab.id !== 'info') ? 'opacity-50' : ''}`}><tab.icon size={16}/> {tab.label}</button>
             ))}
         </div>
@@ -511,28 +570,83 @@ const NoticeDetail: React.FC = () => {
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6"><div><label className="block text-sm font-medium text-slate-700 flex items-center gap-1">Date of Issue</label><input disabled={!canEdit} type="date" value={formData.dateOfIssue || ''} onChange={(e) => handleChange('dateOfIssue', e.target.value)} className="w-full p-2.5 border border-slate-300 rounded-lg disabled:bg-slate-100" /></div><div><label className="block text-sm font-medium text-slate-700 flex items-center gap-1">Due Date</label><input disabled={!canEdit} type="date" value={formData.dueDate || ''} onChange={(e) => handleChange('dueDate', e.target.value)} className="w-full p-2.5 border border-slate-300 rounded-lg disabled:bg-slate-100" /></div></div>
                     <div><label className="block text-sm font-medium text-slate-700 flex items-center gap-1">Description</label><textarea disabled={!canEdit} value={formData.description || ''} onChange={(e) => handleChange('description', e.target.value)} className="w-full p-2.5 border border-slate-300 rounded-lg h-32 resize-none disabled:bg-slate-100" /></div>
-                    
-                    {/* Personal Hearing Section */}
-                    <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 mt-6">
-                        <h4 className="font-semibold text-slate-700 flex items-center gap-2 mb-3"><Gavel size={16}/> Personal Hearing Details</h4>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">Hearing Date</label>
-                                <input disabled={!canEdit} type="date" value={formData.hearingDate || ''} onChange={(e) => handleChange('hearingDate', e.target.value)} className="w-full p-2.5 border border-slate-300 rounded-lg disabled:bg-slate-100 bg-white" />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">Time</label>
-                                <input disabled={!canEdit} type="time" value={formData.hearingTime || ''} onChange={(e) => handleChange('hearingTime', e.target.value)} className="w-full p-2.5 border border-slate-300 rounded-lg disabled:bg-slate-100 bg-white" />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">Venue / Mode</label>
-                                <input disabled={!canEdit} type="text" placeholder="e.g. Room 302 or Video Call" value={formData.hearingVenue || ''} onChange={(e) => handleChange('hearingVenue', e.target.value)} className="w-full p-2.5 border border-slate-300 rounded-lg disabled:bg-slate-100" />
-                            </div>
-                            <div className="md:col-span-3">
-                                <label className="block text-sm font-medium text-slate-700 mb-1">Hearing Outcome / Notes</label>
-                                <textarea disabled={!canEdit} placeholder="Minutes of the meeting..." value={formData.hearingOutcome || ''} onChange={(e) => handleChange('hearingOutcome', e.target.value)} className="w-full p-2.5 border border-slate-300 rounded-lg h-24 resize-none disabled:bg-slate-100" />
-                            </div>
+                </div>
+            )}
+
+            {/* NEW HEARINGS TAB */}
+            {activeTab === 'hearings' && (
+                <div className="animate-in fade-in duration-300 space-y-6">
+                    <div className="flex justify-between items-center">
+                        <div>
+                            <h3 className="text-lg font-bold text-slate-800">Personal Hearings</h3>
+                            <p className="text-sm text-slate-500">Track hearing dates, adjournments, and proceedings.</p>
                         </div>
+                        {canEdit && (
+                            <button onClick={() => { setCurrentHearing({ type: 'Personal Hearing', date: new Date().toISOString().split('T')[0], time: '11:00', status: HearingStatus.SCHEDULED, minutes: '' }); setShowHearingModal(true); }} className="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-700 flex items-center gap-2 shadow-sm">
+                                <Plus size={16}/> Schedule Hearing
+                            </button>
+                        )}
+                    </div>
+
+                    <div className="space-y-4">
+                        {hearings?.map((hearing) => (
+                            <div key={hearing.id} className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow relative">
+                                <div className="flex flex-col md:flex-row justify-between md:items-start gap-4 mb-3">
+                                    <div className="flex gap-4">
+                                        <div className={`flex flex-col items-center justify-center w-16 h-16 rounded-xl text-white shadow-sm ${
+                                            hearing.status === HearingStatus.CONCLUDED ? 'bg-green-600' :
+                                            hearing.status === HearingStatus.ADJOURNED ? 'bg-amber-500' :
+                                            hearing.status === HearingStatus.CANCELLED ? 'bg-red-500' :
+                                            'bg-purple-600'
+                                        }`}>
+                                            <span className="text-xs font-bold uppercase">{new Date(hearing.date).toLocaleString('default', {month:'short'})}</span>
+                                            <span className="text-2xl font-bold">{new Date(hearing.date).getDate()}</span>
+                                        </div>
+                                        <div>
+                                            <h4 className="font-bold text-slate-800 text-lg flex items-center gap-2">
+                                                {hearing.type} 
+                                                <span className={`text-[10px] uppercase px-2 py-0.5 rounded-full border ${
+                                                    hearing.status === HearingStatus.CONCLUDED ? 'bg-green-50 text-green-700 border-green-200' :
+                                                    hearing.status === HearingStatus.ADJOURNED ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                                                    'bg-purple-50 text-purple-700 border-purple-200'
+                                                }`}>{hearing.status}</span>
+                                            </h4>
+                                            <div className="flex flex-wrap gap-4 text-sm text-slate-600 mt-1">
+                                                <div className="flex items-center gap-1"><Clock size={14}/> {hearing.time}</div>
+                                                <div className="flex items-center gap-1"><MapPin size={14}/> {hearing.venue}</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="flex gap-2">
+                                        {canEdit && (
+                                            <>
+                                                <button onClick={() => handleEditHearing(hearing)} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg"><Edit size={16}/></button>
+                                                <button onClick={() => handleDeleteHearing(hearing.id!)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg"><Trash2 size={16}/></button>
+                                            </>
+                                        )}
+                                    </div>
+                                </div>
+                                
+                                {hearing.attendees && (
+                                    <div className="mb-3 flex items-start gap-2">
+                                        <span className="text-xs font-bold text-slate-500 uppercase mt-0.5">Attendees:</span>
+                                        <p className="text-sm text-slate-700">{hearing.attendees}</p>
+                                    </div>
+                                )}
+
+                                <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
+                                    <span className="text-xs font-bold text-slate-500 uppercase block mb-1">Minutes / Outcome:</span>
+                                    <p className="text-sm text-slate-700 whitespace-pre-line">{hearing.minutes || 'No notes recorded.'}</p>
+                                </div>
+                            </div>
+                        ))}
+                        {hearings?.length === 0 && (
+                            <div className="text-center py-12 bg-slate-50 rounded-xl border border-dashed border-slate-300">
+                                <Gavel size={48} className="mx-auto text-slate-300 mb-3"/>
+                                <p className="text-slate-500 font-medium">No hearings scheduled yet.</p>
+                                <p className="text-sm text-slate-400">Click "Schedule Hearing" to add one.</p>
+                            </div>
+                        )}
                     </div>
                 </div>
             )}
@@ -699,6 +813,59 @@ const NoticeDetail: React.FC = () => {
             )}
         </div>
       </div>
+
+      {/* Hearing Modal */}
+      {showHearingModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+              <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl animate-in zoom-in-95">
+                  <div className="p-5 border-b bg-slate-50 flex justify-between items-center">
+                      <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2"><Gavel className="text-purple-600"/> {currentHearing.id ? 'Edit Hearing' : 'Schedule Hearing'}</h3>
+                      <button onClick={() => setShowHearingModal(false)}><X size={20} className="text-slate-400 hover:text-slate-600"/></button>
+                  </div>
+                  <form onSubmit={handleSaveHearing} className="p-6 space-y-4">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                              <label className="block text-sm font-medium text-slate-700 mb-1">Date <span className="text-red-500">*</span></label>
+                              <input type="date" required value={currentHearing.date || ''} onChange={e => setCurrentHearing({...currentHearing, date: e.target.value})} className="w-full p-2.5 border rounded-lg"/>
+                          </div>
+                          <div>
+                              <label className="block text-sm font-medium text-slate-700 mb-1">Time <span className="text-red-500">*</span></label>
+                              <input type="time" required value={currentHearing.time || ''} onChange={e => setCurrentHearing({...currentHearing, time: e.target.value})} className="w-full p-2.5 border rounded-lg"/>
+                          </div>
+                          <div>
+                              <label className="block text-sm font-medium text-slate-700 mb-1">Type</label>
+                              <select value={currentHearing.type || 'Personal Hearing'} onChange={e => setCurrentHearing({...currentHearing, type: e.target.value as any})} className="w-full p-2.5 border rounded-lg bg-white">
+                                  <option>Personal Hearing</option>
+                                  <option>Adjournment</option>
+                                  <option>Final Hearing</option>
+                              </select>
+                          </div>
+                          <div>
+                              <label className="block text-sm font-medium text-slate-700 mb-1">Status</label>
+                              <select value={currentHearing.status || HearingStatus.SCHEDULED} onChange={e => setCurrentHearing({...currentHearing, status: e.target.value as any})} className="w-full p-2.5 border rounded-lg bg-white">
+                                  {Object.values(HearingStatus).map(s => <option key={s} value={s}>{s}</option>)}
+                              </select>
+                          </div>
+                      </div>
+                      <div>
+                          <label className="block text-sm font-medium text-slate-700 mb-1">Venue / Mode</label>
+                          <input type="text" placeholder="e.g. Room 302, Virtual (Zoom)" value={currentHearing.venue || ''} onChange={e => setCurrentHearing({...currentHearing, venue: e.target.value})} className="w-full p-2.5 border rounded-lg"/>
+                      </div>
+                      <div>
+                          <label className="block text-sm font-medium text-slate-700 mb-1">Attendees (Staff / Client)</label>
+                          <input type="text" placeholder="Who will attend?" value={currentHearing.attendees || ''} onChange={e => setCurrentHearing({...currentHearing, attendees: e.target.value})} className="w-full p-2.5 border rounded-lg"/>
+                      </div>
+                      <div>
+                          <label className="block text-sm font-medium text-slate-700 mb-1">Minutes / Outcome</label>
+                          <textarea placeholder="Record discussion points or order details here..." value={currentHearing.minutes || ''} onChange={e => setCurrentHearing({...currentHearing, minutes: e.target.value})} className="w-full p-2.5 border rounded-lg h-32 resize-none"/>
+                      </div>
+                      <div className="flex justify-end pt-2">
+                          <button type="submit" className="bg-purple-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-purple-700 shadow-sm">Save Hearing</button>
+                      </div>
+                  </form>
+              </div>
+          </div>
+      )}
 
       {/* OCR Modal */}
       {showOCRModal && (

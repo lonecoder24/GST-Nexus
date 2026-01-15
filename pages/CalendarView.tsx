@@ -12,6 +12,7 @@ const CalendarView: React.FC = () => {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
   const notices = useLiveQuery(() => db.notices.toArray());
+  const hearings = useLiveQuery(() => db.hearings.toArray());
 
   const getDaysInMonth = (date: Date) => {
     const year = date.getFullYear();
@@ -41,16 +42,23 @@ const CalendarView: React.FC = () => {
 
   // Group events by date
   const eventsByDate: Record<string, any[]> = {};
+  
+  // Notice Due Dates
   notices?.forEach(notice => {
-      // Due Date
       if (notice.dueDate && notice.status !== NoticeStatus.CLOSED) {
           if (!eventsByDate[notice.dueDate]) eventsByDate[notice.dueDate] = [];
           eventsByDate[notice.dueDate].push({ type: 'due', notice });
       }
-      // Hearing Date
-      if (notice.hearingDate) {
-          if (!eventsByDate[notice.hearingDate]) eventsByDate[notice.hearingDate] = [];
-          eventsByDate[notice.hearingDate].push({ type: 'hearing', notice });
+  });
+
+  // Hearings from new table
+  hearings?.forEach(hearing => {
+      if (hearing.date) {
+          const relatedNotice = notices?.find(n => n.id === hearing.noticeId);
+          if (relatedNotice) {
+              if (!eventsByDate[hearing.date]) eventsByDate[hearing.date] = [];
+              eventsByDate[hearing.date].push({ type: 'hearing', notice: relatedNotice, hearingDetail: hearing });
+          }
       }
   });
 
@@ -165,11 +173,16 @@ const CalendarView: React.FC = () => {
                             </h4>
                             <p className="text-xs text-slate-500 mt-1 line-clamp-1">{evt.notice.noticeType}</p>
                             
-                            {evt.type === 'hearing' && (
-                                <div className="mt-2 pt-2 border-t border-purple-200/50 flex items-center gap-2 text-xs text-purple-700">
-                                    <Gavel size={12}/>
-                                    <span>{evt.notice.hearingTime || 'Time not set'}</span>
-                                    {evt.notice.hearingVenue && <span className="truncate">• {evt.notice.hearingVenue}</span>}
+                            {evt.type === 'hearing' && evt.hearingDetail && (
+                                <div className="mt-2 pt-2 border-t border-purple-200/50 flex flex-col gap-1 text-xs text-purple-700">
+                                    <div className="flex items-center gap-2">
+                                        <Gavel size={12}/>
+                                        <span>{evt.hearingDetail.time}</span>
+                                    </div>
+                                    <span className="truncate opacity-75">{evt.hearingDetail.venue}</span>
+                                    <span className={`text-[9px] px-1 rounded w-fit border ${
+                                        evt.hearingDetail.status === 'Concluded' ? 'bg-green-100 border-green-200 text-green-700' : 'bg-purple-100 border-purple-200 text-purple-700'
+                                    }`}>{evt.hearingDetail.status}</span>
                                 </div>
                             )}
                         </div>

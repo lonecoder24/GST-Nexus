@@ -42,7 +42,6 @@ const App: React.FC = () => {
             <Route path="/admin" element={<AdminSettings />} />
             <Route path="/reports" element={<Reports />} />
             <Route path="/reconciliation" element={<Reconciliation />} />
-            <Route path="/risks" element={<div className="p-4">Risk Matrix Coming Soon</div>} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Layout>
