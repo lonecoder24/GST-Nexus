@@ -70,8 +70,8 @@ export interface Notification {
 
 export interface AppConfig {
   id?: number;
-  key: string; // 'notice_types', 'notice_statuses', 'user_roles', 'perm:<role>'
-  value: string[]; // JSON array of strings
+  key: string; // 'notice_types', 'notice_statuses', 'user_roles', 'perm:<role>', 'api_config'
+  value: any; // Changed from string[] to any to support objects (like API config)
 }
 
 export interface Taxpayer {
@@ -175,7 +175,7 @@ export interface PaymentLog {
 
 export interface AuditLog {
   id?: number;
-  entityType: 'Notice' | 'Payment' | 'Taxpayer' | 'System' | 'Auth' | 'Defect' | 'Reconciliation' | 'Document' | 'Hearing';
+  entityType: 'Notice' | 'Payment' | 'Taxpayer' | 'System' | 'Auth' | 'Defect' | 'Reconciliation' | 'Document' | 'Hearing' | 'Return' | 'TimeSheet';
   entityId: number | string;
   action: 'Create' | 'Update' | 'Delete' | 'StatusChange' | 'Login';
   timestamp: string;
@@ -186,6 +186,7 @@ export interface AuditLog {
 export interface TeamTimeSheet {
   id?: number;
   noticeId: number;
+  defectId?: number;
   teamMember: string;
   hoursSpent: number;
   date: string;
@@ -222,4 +223,26 @@ export interface ReconciliationRecord {
   rows: ReconciliationRow[];
   updatedAt: string;
   lastModifiedBy: string;
+}
+
+// Returns & Analysis
+export type GSTReturnType = 'GSTR-1' | 'GSTR-3B' | 'GSTR-9' | 'GSTR-2A' | 'GSTR-2B';
+
+export interface ReturnRecord {
+  id?: number;
+  gstin: string;
+  returnType: GSTReturnType;
+  period: string; // MM-YYYY
+  financialYear: string;
+  filingDate: string;
+  arn?: string;
+  
+  // Summary Values
+  taxableValue: number;
+  taxLiability: number; // For GSTR-1/3B
+  itcAvailable: number; // For GSTR-2B/3B
+  cashPaid: number;
+  
+  status: 'Filed' | 'Not Filed' | 'Submitted';
+  sourceFile?: string; // Filename if imported
 }

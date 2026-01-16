@@ -1,7 +1,7 @@
 
 import React, { useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, FileText, Users, FileSpreadsheet, Settings, LogOut, Activity, Scale, Calendar } from 'lucide-react';
+import { LayoutDashboard, FileText, Users, FileSpreadsheet, Settings, LogOut, Activity, Scale, Calendar, BarChart3, Clock } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { checkAndGenerateNotifications } from '../db';
 import NotificationCenter from './NotificationCenter';
@@ -36,6 +36,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
     { icon: Calendar, label: 'Calendar', path: '/calendar' },
     { icon: FileText, label: 'Notices', path: '/notices' },
+    { icon: Clock, label: 'Time Sheet', path: '/timesheets' },
+    { icon: BarChart3, label: 'Returns', path: '/returns' },
     { icon: Users, label: 'Taxpayers', path: '/taxpayers' },
     { icon: Scale, label: 'Reconciliation', path: '/reconciliation' },
     { icon: Activity, label: 'Audit Logs', path: '/audit-logs' },
@@ -48,7 +50,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   };
 
   return (
-    <div className="flex h-screen w-screen bg-slate-50 overflow-hidden">
+    <div className="flex h-screen w-screen bg-gray-100 overflow-hidden">
       {/* Sidebar */}
       <aside className="w-64 bg-slate-900 text-white flex flex-col shadow-xl z-20">
         <div className="p-6 border-b border-slate-700">
@@ -100,7 +102,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       {/* Main Content */}
       <main className="flex-1 flex flex-col h-full overflow-hidden relative">
         {/* Header */}
-        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-8 shadow-sm z-10">
+        <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-8 shadow-sm z-10">
           <h1 className="text-xl font-semibold text-slate-800">
             {navItems.find(i => i.path === location.pathname)?.label || 
              (location.pathname.startsWith('/admin') ? 'Administration' : 
@@ -111,7 +113,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
           <div className="flex items-center gap-6">
              <NotificationCenter />
              
-             <div className="h-6 w-px bg-slate-200"></div>
+             <div className="h-6 w-px bg-gray-200"></div>
 
              <div className="flex items-center gap-3">
                 <div className="text-right hidden sm:block">

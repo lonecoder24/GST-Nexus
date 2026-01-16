@@ -13,6 +13,8 @@ import AdminSettings from './pages/AdminSettings';
 import Reports from './pages/Reports';
 import Reconciliation from './pages/Reconciliation';
 import CalendarView from './pages/CalendarView';
+import Returns from './pages/Returns';
+import TimeSheet from './pages/TimeSheet';
 import { AuthProvider } from './contexts/AuthContext';
 import { seedDatabase } from './db';
 
@@ -33,6 +35,9 @@ const App: React.FC = () => {
             <Route path="/calendar" element={<CalendarView />} />
             <Route path="/notices" element={<NoticeList />} />
             <Route path="/notices/:id" element={<NoticeDetail />} />
+            
+            <Route path="/returns" element={<Returns />} />
+            <Route path="/timesheets" element={<TimeSheet />} />
             
             <Route path="/taxpayers" element={<TaxpayerList />} />
             <Route path="/taxpayers/:id" element={<TaxpayerDetail />} />

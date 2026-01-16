@@ -2,8 +2,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
-import { UserRole, ALL_PERMISSIONS, PermissionType } from '../types';
-import { Trash2, UserPlus, Save, Shield, Settings, Plus, X, AlertOctagon, Users, Calculator, Calendar, ToggleLeft, ToggleRight, Info, CheckCircle, Lock, Edit2, Database, Download, Upload } from 'lucide-react';
+import { UserRole, ALL_PERMISSIONS, PermissionType, User } from '../types';
+import { Trash2, UserPlus, Save, Shield, Settings, Plus, X, AlertOctagon, Users, Calculator, Calendar, ToggleLeft, ToggleRight, Info, CheckCircle, Lock, Edit2, Database, Download, Upload, Globe, Key, Wifi, MapPin, List } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 const AdminSettings: React.FC = () => {
@@ -18,6 +18,14 @@ const AdminSettings: React.FC = () => {
   const [isTillToday, setIsTillToday] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
+  // Config State
+  const [newConfigInput, setNewConfigInput] = useState<Record<string, string>>({});
+
+  // Password Reset State
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [selectedUserForReset, setSelectedUserForReset] = useState<User | null>(null);
+  const [newPasswordInput, setNewPasswordInput] = useState('');
+
   // New User Form State
   const [newUser, setNewUser] = useState({
       username: '',
@@ -27,11 +35,12 @@ const AdminSettings: React.FC = () => {
       role: UserRole.ASSOCIATE as string
   });
 
-  // Config State
-  const [newNoticeType, setNewNoticeType] = useState('');
-  const [newNoticeStatus, setNewNoticeStatus] = useState('');
-  const [newDefectType, setNewDefectType] = useState('');
-  const [newUserRoleConfig, setNewUserRoleConfig] = useState('');
+  // API Config State
+  const [apiConfig, setApiConfig] = useState({
+      baseUrl: 'https://api.gst.gov.in/v1',
+      clientId: '',
+      clientSecret: ''
+  });
 
   // Sync target date with today if toggle is on
   useEffect(() => {
@@ -39,6 +48,19 @@ const AdminSettings: React.FC = () => {
           setTargetDate(new Date().toISOString().split('T')[0]);
       }
   }, [isTillToday]);
+
+  useEffect(() => {
+      // Load API Config
+      db.appConfig.get({ key: 'api_config' }).then(config => {
+          if (config && config.value) {
+              setApiConfig({
+                  baseUrl: config.value.baseUrl || 'https://api.gst.gov.in/v1',
+                  clientId: config.value.clientId || '',
+                  clientSecret: config.value.clientSecret || ''
+              });
+          }
+      });
+  }, []);
 
   const handleAddUser = async (e: React.FormEvent) => {
       e.preventDefault();
@@ -77,10 +99,77 @@ const AdminSettings: React.FC = () => {
       }
   };
 
+  const openPasswordModal = (user: User) => {
+      setSelectedUserForReset(user);
+      setNewPasswordInput('');
+      setShowPasswordModal(true);
+  };
+
+  const handlePasswordUpdate = async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!selectedUserForReset || !newPasswordInput) return;
+
+      try {
+          await db.users.update(selectedUserForReset.id!, { passwordHash: newPasswordInput });
+          await db.auditLogs.add({
+              entityType: 'Auth', entityId: selectedUserForReset.id!, action: 'Update', timestamp: new Date().toISOString(),
+              user: currentUser?.username || 'System', details: `Password changed for user ${selectedUserForReset.username}`
+          });
+          alert('Password updated successfully');
+          setShowPasswordModal(false);
+          setNewPasswordInput('');
+          setSelectedUserForReset(null);
+      } catch (err) {
+          console.error(err);
+          alert('Failed to update password');
+      }
+  };
+
+  // --- SYSTEM CONFIG HANDLERS ---
+  const handleAddConfigItem = async (key: string) => {
+      const val = newConfigInput[key]?.trim();
+      if (!val) return;
+
+      const currentConfig = configItems?.find(c => c.key === key);
+      const currentValues = currentConfig?.value || [];
+      
+      if (currentValues.includes(val)) {
+          alert('Value already exists');
+          return;
+      }
+
+      const newValues = [...currentValues, val];
+
+      if (currentConfig) {
+          await db.appConfig.update(currentConfig.id!, { value: newValues });
+      } else {
+          await db.appConfig.add({ key, value: newValues });
+      }
+
+      await db.auditLogs.add({
+          entityType: 'System', entityId: 'CONFIG', action: 'Update', timestamp: new Date().toISOString(),
+          user: currentUser?.username || 'System', details: `Added '${val}' to ${key}`
+      });
+
+      setNewConfigInput({ ...newConfigInput, [key]: '' });
+  };
+
+  const handleRemoveConfigItem = async (key: string, valueToRemove: string) => {
+      if (!confirm(`Remove '${valueToRemove}'?`)) return;
+      
+      const currentConfig = configItems?.find(c => c.key === key);
+      if (!currentConfig) return;
+
+      const newValues = currentConfig.value.filter((v: string) => v !== valueToRemove);
+      await db.appConfig.update(currentConfig.id!, { value: newValues });
+
+      await db.auditLogs.add({
+          entityType: 'System', entityId: 'CONFIG', action: 'Update', timestamp: new Date().toISOString(),
+          user: currentUser?.username || 'System', details: `Removed '${valueToRemove}' from ${key}`
+      });
+  };
+
   const handleBulkInterestUpdate = async () => {
-    // Only proceed if logic is sound.
-    // Requirement: "The bulk interest update option is only for notices for which interest is calculated till today is selected"
-    
     const confirmation = confirm(`This will recalculate interest for ALL open notices (Status ≠ Closed).
     \nParameters:
     - Interest Rate: ${interestRate}%
@@ -196,11 +285,9 @@ const AdminSettings: React.FC = () => {
           try {
               const importedData = JSON.parse(ev.target?.result as string);
               await db.transaction('rw', db.tables, async () => {
-                  // Clear all tables
                   for (const table of db.tables) {
                       await table.clear();
                   }
-                  // Populate tables
                   for (const tableName of Object.keys(importedData)) {
                       const table = db.table(tableName);
                       if (table) {
@@ -218,22 +305,28 @@ const AdminSettings: React.FC = () => {
       reader.readAsText(file);
   };
 
-  const getConfig = (key: string) => configItems?.find(c => c.key === key)?.value || [];
-  
-  const addItemToConfig = async (key: string, item: string, setInput: (v: string) => void) => {
-      if (!item.trim()) return;
-      const config = await db.appConfig.where('key').equals(key).first();
-      let currentValues = config?.value || [];
-      if (!currentValues.includes(item)) {
-          const newValues = [...currentValues, item];
-          config ? await db.appConfig.update(config.id!, { value: newValues }) : await db.appConfig.add({ key, value: newValues });
-          setInput('');
-      } else alert('Item already exists');
+  const handleSaveApiConfig = async (e: React.FormEvent) => {
+      e.preventDefault();
+      try {
+          const existing = await db.appConfig.get({ key: 'api_config' });
+          if (existing) {
+              await db.appConfig.update(existing.id!, { value: apiConfig });
+          } else {
+              await db.appConfig.add({ key: 'api_config', value: apiConfig });
+          }
+          await db.auditLogs.add({
+              entityType: 'System', entityId: 'API_CONFIG', action: 'Update', timestamp: new Date().toISOString(),
+              user: currentUser?.username || 'System', details: 'Updated API Configuration'
+          });
+          alert('API Configuration Saved.');
+      } catch (e) {
+          alert('Error saving configuration');
+      }
   };
-  
-  const removeItemFromConfig = async (key: string, item: string) => {
-      const config = await db.appConfig.where('key').equals(key).first();
-      if (config) await db.appConfig.update(config.id!, { value: config.value.filter((v: string) => v !== item) });
+
+  const getConfig = (key: string) => configItems?.find(c => c.key === key)?.value || [];
+  const getRolePermissions = (role: string): string[] => {
+      return configItems?.find(c => c.key === `perm:${role}`)?.value || [];
   };
 
   const togglePermission = async (role: string, permission: string) => {
@@ -242,7 +335,7 @@ const AdminSettings: React.FC = () => {
       
       let currentPerms = config?.value || [];
       if (currentPerms.includes(permission)) {
-          currentPerms = currentPerms.filter(p => p !== permission);
+          currentPerms = currentPerms.filter((p: string) => p !== permission);
       } else {
           currentPerms = [...currentPerms, permission];
       }
@@ -254,11 +347,6 @@ const AdminSettings: React.FC = () => {
       }
   };
 
-  const getRolePermissions = (role: string): string[] => {
-      return configItems?.find(c => c.key === `perm:${role}`)?.value || [];
-  };
-
-  // Get dynamic roles from config or fallback to defaults
   const availableRoles = getConfig('user_roles').length > 0 ? getConfig('user_roles') : Object.values(UserRole);
 
   return (
@@ -275,18 +363,76 @@ const AdminSettings: React.FC = () => {
 
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden min-h-[500px]">
          <div className="flex border-b border-slate-200 overflow-x-auto">
-            {['users', 'config', 'maintenance', 'data'].map(tab => (
+            {['users', 'config', 'api', 'maintenance', 'data'].map(tab => (
                 <button 
                     key={tab}
                     onClick={() => setActiveTab(tab)}
                     className={`px-8 py-5 text-sm font-semibold border-b-2 transition-all capitalize ${activeTab === tab ? 'border-blue-600 text-blue-600 bg-blue-50/30' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
                 >
-                    {tab === 'config' ? 'System Configuration' : tab === 'maintenance' ? 'Maintenance & Tools' : tab === 'data' ? 'Data Management' : 'User Management'}
+                    {tab === 'config' ? 'System Configuration' : tab === 'api' ? 'API Integration' : tab === 'maintenance' ? 'Maintenance & Tools' : tab === 'data' ? 'Data Management' : 'User Management'}
                 </button>
             ))}
          </div>
 
          <div className="p-8">
+             {/* CONFIGURATION TAB */}
+             {activeTab === 'config' && (
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in">
+                     <div className="md:col-span-2 bg-blue-50 p-4 rounded-xl border border-blue-100 flex items-start gap-3">
+                         <Info className="text-blue-600 shrink-0 mt-0.5" size={18}/>
+                         <div>
+                             <p className="text-sm font-bold text-blue-800">System Parameters</p>
+                             <p className="text-xs text-blue-700 mt-1">
+                                 Values configured here populate dropdowns across the application (e.g. creating new notices, assigning defects, filtering reports).
+                             </p>
+                         </div>
+                     </div>
+
+                     {[
+                         { key: 'notice_types', label: 'Notice Types', icon: List, placeholder: 'e.g. SCN, ASMT-10, DRC-01' },
+                         { key: 'notice_statuses', label: 'Workflow Statuses', icon: CheckCircle, placeholder: 'e.g. Pending Review, Order Passed' },
+                         { key: 'defect_types', label: 'Defect Types', icon: AlertOctagon, placeholder: 'e.g. ITC Mismatch, E-Way Bill' },
+                         { key: 'user_roles', label: 'User Roles', icon: Users, placeholder: 'e.g. Manager, Partner' }
+                     ].map(section => (
+                         <div key={section.key} className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
+                             <h4 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
+                                 <section.icon size={18} className="text-slate-400"/> {section.label}
+                             </h4>
+                             <div className="flex gap-2 mb-4">
+                                 <input 
+                                     type="text" 
+                                     className="flex-1 p-2 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                                     placeholder={section.placeholder}
+                                     value={newConfigInput[section.key] || ''}
+                                     onChange={e => setNewConfigInput({...newConfigInput, [section.key]: e.target.value})}
+                                     onKeyDown={e => e.key === 'Enter' && handleAddConfigItem(section.key)}
+                                 />
+                                 <button 
+                                     onClick={() => handleAddConfigItem(section.key)}
+                                     className="bg-blue-600 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
+                                 >
+                                     Add
+                                 </button>
+                             </div>
+                             <div className="flex flex-wrap gap-2 min-h-[60px] content-start">
+                                 {getConfig(section.key).map((item: string) => (
+                                     <span key={item} className="bg-slate-100 text-slate-700 text-xs px-2.5 py-1.5 rounded-full border border-slate-200 flex items-center gap-1 group transition-colors hover:bg-slate-200">
+                                         {item}
+                                         <button 
+                                            onClick={() => handleRemoveConfigItem(section.key, item)} 
+                                            className="text-slate-400 hover:text-red-500 rounded-full p-0.5 hover:bg-red-50"
+                                         >
+                                             <X size={12}/>
+                                         </button>
+                                     </span>
+                                 ))}
+                                 {getConfig(section.key).length === 0 && <span className="text-xs text-slate-400 italic">No items configured</span>}
+                             </div>
+                         </div>
+                     ))}
+                 </div>
+             )}
+
              {activeTab === 'users' && (
                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-in fade-in slide-in-from-left-4">
                      {/* Add User */}
@@ -322,7 +468,24 @@ const AdminSettings: React.FC = () => {
                                                 </td>
                                                 <td className="px-6 py-4"><span className="px-3 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-600 border border-slate-200">{u.role}</span></td>
                                                 <td className="px-6 py-4 text-right">
-                                                    {u.username !== 'admin' && <button onClick={() => handleDeleteUser(u.id!)} className="text-slate-400 hover:text-red-600 p-2 hover:bg-red-50 rounded-lg transition-colors"><Trash2 size={18} /></button>}
+                                                    <div className="flex justify-end gap-2">
+                                                        <button 
+                                                            onClick={() => openPasswordModal(u)}
+                                                            className="text-slate-400 hover:text-blue-600 p-2 hover:bg-blue-50 rounded-lg transition-colors"
+                                                            title="Change Password"
+                                                        >
+                                                            <Lock size={18} />
+                                                        </button>
+                                                        {u.username !== 'admin' && (
+                                                            <button 
+                                                                onClick={() => handleDeleteUser(u.id!)} 
+                                                                className="text-slate-400 hover:text-red-600 p-2 hover:bg-red-50 rounded-lg transition-colors"
+                                                                title="Delete User"
+                                                            >
+                                                                <Trash2 size={18} />
+                                                            </button>
+                                                        )}
+                                                    </div>
                                                 </td>
                                             </tr>
                                         ))}
@@ -372,36 +535,50 @@ const AdminSettings: React.FC = () => {
                  </div>
              )}
 
-             {activeTab === 'config' && (
-                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-in fade-in slide-in-from-right-4">
-                     {[
-                         { title: 'Notice Types', icon: Settings, color: 'blue', items: getConfig('notice_types'), newItem: newNoticeType, setNewItem: setNewNoticeType, key: 'notice_types' },
-                         { title: 'Notice Statuses', icon: Settings, color: 'purple', items: getConfig('notice_statuses'), newItem: newNoticeStatus, setNewItem: setNewNoticeStatus, key: 'notice_statuses' },
-                         { title: 'User Roles', icon: Users, color: 'indigo', items: getConfig('user_roles'), newItem: newUserRoleConfig, setNewItem: setNewUserRoleConfig, key: 'user_roles' },
-                         { title: 'Defect Types', icon: AlertOctagon, color: 'amber', items: getConfig('defect_types'), newItem: newDefectType, setNewItem: setNewDefectType, key: 'defect_types' }
-                     ].map((section) => (
-                         <div key={section.key} className="bg-slate-50 p-6 rounded-2xl border border-slate-200 flex flex-col">
-                             <h3 className={`font-bold text-slate-800 mb-4 flex items-center gap-2`}>
-                                 <section.icon size={20} className={`text-${section.color}-600`} /> {section.title}
-                             </h3>
-                             <div className="flex gap-2 mb-4">
-                                 <input type="text" placeholder="Add new..." className="flex-1 p-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" value={section.newItem} onChange={(e) => section.setNewItem(e.target.value)} />
-                                 <button onClick={() => addItemToConfig(section.key, section.newItem, section.setNewItem)} className={`bg-${section.color}-600 text-white px-4 py-2 rounded-lg hover:bg-${section.color}-700 transition-colors`}><Plus size={20} /></button>
-                             </div>
-                             <div className="flex flex-wrap gap-2 content-start">
-                                 {section.items.map((item: string) => (
-                                     <div key={item} className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border border-slate-200 text-sm text-slate-700 shadow-sm group">
-                                         <span>{item}</span>
-                                         <button onClick={() => removeItemFromConfig(section.key, item)} className="text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"><X size={14} /></button>
-                                     </div>
-                                 ))}
-                                 {!section.items.length && <span className="text-xs text-slate-400 italic">No items defined.</span>}
+             {activeTab === 'api' && (
+                 <div className="max-w-2xl mx-auto animate-in fade-in zoom-in-95">
+                     <div className="bg-white border border-slate-200 rounded-2xl p-8 shadow-sm">
+                         <div className="flex items-start gap-4 mb-6">
+                             <div className="p-3 bg-indigo-100 text-indigo-600 rounded-xl"><Globe size={28}/></div>
+                             <div>
+                                 <h3 className="text-xl font-bold text-slate-800">API Integration</h3>
+                                 <p className="text-slate-500 text-sm mt-1">Configure credentials for future fetching of GSTR data.</p>
                              </div>
                          </div>
-                     ))}
+                         
+                         <form onSubmit={handleSaveApiConfig} className="space-y-6">
+                             <div>
+                                 <label className="block text-sm font-bold text-slate-700 mb-2">GSTN API Base URL</label>
+                                 <input type="url" value={apiConfig.baseUrl} onChange={e => setApiConfig({...apiConfig, baseUrl: e.target.value})} className="w-full p-3 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none" required />
+                             </div>
+                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                 <div>
+                                     <label className="block text-sm font-bold text-slate-700 mb-2">Client ID</label>
+                                     <div className="relative">
+                                         <Key size={16} className="absolute left-3 top-3 text-slate-400"/>
+                                         <input type="text" value={apiConfig.clientId} onChange={e => setApiConfig({...apiConfig, clientId: e.target.value})} className="w-full pl-9 pr-3 py-3 border border-slate-300 rounded-xl text-sm" placeholder="Enter Client ID"/>
+                                     </div>
+                                 </div>
+                                 <div>
+                                     <label className="block text-sm font-bold text-slate-700 mb-2">Client Secret</label>
+                                     <div className="relative">
+                                         <Lock size={16} className="absolute left-3 top-3 text-slate-400"/>
+                                         <input type="password" value={apiConfig.clientSecret} onChange={e => setApiConfig({...apiConfig, clientSecret: e.target.value})} className="w-full pl-9 pr-3 py-3 border border-slate-300 rounded-xl text-sm" placeholder="Enter Secret"/>
+                                     </div>
+                                 </div>
+                             </div>
+                             
+                             <div className="pt-4">
+                                 <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl transition-colors shadow-md">
+                                     Save Configuration
+                                 </button>
+                             </div>
+                         </form>
+                     </div>
                  </div>
              )}
 
+             {/* Maintenance and Data tabs... (Same as before) */}
              {activeTab === 'maintenance' && (
                  <div className="max-w-2xl mx-auto space-y-8 animate-in fade-in zoom-in-95">
                      <div className="bg-gradient-to-br from-white to-slate-50 border border-slate-200 rounded-2xl p-8 shadow-sm">
@@ -499,6 +676,43 @@ const AdminSettings: React.FC = () => {
              )}
          </div>
       </div>
+
+      {/* Password Reset Modal */}
+      {showPasswordModal && selectedUserForReset && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+              <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 animate-in zoom-in-95">
+                  <div className="flex justify-between items-center mb-6">
+                      <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                          <Lock className="text-blue-600"/> Change Password
+                      </h3>
+                      <button onClick={() => setShowPasswordModal(false)} className="text-slate-400 hover:text-slate-600"><X size={20}/></button>
+                  </div>
+                  
+                  <div className="mb-4">
+                      <p className="text-sm text-slate-600">Setting new password for user: <span className="font-bold text-slate-800">{selectedUserForReset.username}</span></p>
+                  </div>
+
+                  <form onSubmit={handlePasswordUpdate} className="space-y-4">
+                      <div>
+                          <label className="block text-sm font-medium text-slate-700 mb-1">New Password</label>
+                          <input 
+                              type="text" 
+                              required 
+                              placeholder="Enter new password"
+                              value={newPasswordInput} 
+                              onChange={e => setNewPasswordInput(e.target.value)} 
+                              className="w-full p-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                          />
+                      </div>
+                      <div className="flex justify-end pt-2">
+                          <button type="submit" className="bg-blue-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-blue-700 shadow-sm w-full">
+                              Update Password
+                          </button>
+                      </div>
+                  </form>
+              </div>
+          </div>
+      )}
     </div>
   );
 };
