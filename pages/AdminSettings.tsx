@@ -390,6 +390,7 @@ const AdminSettings: React.FC = () => {
 
                      {[
                          { key: 'notice_types', label: 'Notice Types', icon: List, placeholder: 'e.g. SCN, ASMT-10, DRC-01' },
+                         { key: 'notice_periods', label: 'Financial Periods', icon: Calendar, placeholder: 'e.g. FY 2023-24' },
                          { key: 'notice_statuses', label: 'Workflow Statuses', icon: CheckCircle, placeholder: 'e.g. Pending Review, Order Passed' },
                          { key: 'defect_types', label: 'Defect Types', icon: AlertOctagon, placeholder: 'e.g. ITC Mismatch, E-Way Bill' },
                          { key: 'user_roles', label: 'User Roles', icon: Users, placeholder: 'e.g. Manager, Partner' }

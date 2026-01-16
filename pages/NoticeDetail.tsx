@@ -70,9 +70,12 @@ const NoticeDetail: React.FC = () => {
   const configTypes = useLiveQuery(() => db.appConfig.get({key: 'notice_types'}));
   const configStatuses = useLiveQuery(() => db.appConfig.get({key: 'notice_statuses'}));
   const configDefectTypes = useLiveQuery(() => db.appConfig.get({key: 'defect_types'}));
+  const configPeriods = useLiveQuery(() => db.appConfig.get({key: 'notice_periods'}));
+  
   const typeOptions = configTypes?.value || [];
   const statusOptions = configStatuses?.value || Object.values(NoticeStatus);
   const defectTypeOptions = configDefectTypes?.value || [];
+  const periodOptions = configPeriods?.value || [];
   
   const taxpayersList = useLiveQuery(() => db.taxpayers.orderBy('tradeName').toArray()) || [];
   const usersList = useLiveQuery(() => db.users.filter(u => u.isActive === true).toArray()) || [];
@@ -250,7 +253,6 @@ const NoticeDetail: React.FC = () => {
   };
 
   const handleUpdateInterestTillToday = async () => {
-    // ... existing interest logic ...
     if (!canEdit) return;
     const rate = parseFloat(prompt("Enter Annual Interest Rate (%)", "18") || "0");
     if (!rate) return;
@@ -550,10 +552,48 @@ const NoticeDetail: React.FC = () => {
                                 <div className="flex justify-between items-center mb-3"><h4 className="font-semibold text-slate-700 flex items-center gap-2 text-sm"><Building size={16}/> Taxpayer Details</h4><button onClick={() => setIsEditingTaxpayer(!isEditingTaxpayer)} className="text-xs text-blue-600 hover:underline">{isEditingTaxpayer ? 'Cancel' : (linkedTaxpayer ? 'Edit' : 'Add Details')}</button></div>
                                 {isEditingTaxpayer ? (
                                     <div className="space-y-3 animate-in fade-in duration-200">
-                                         <div><label className="text-xs text-slate-500 font-medium block mb-1">Trade Name</label><input disabled={!canEdit} placeholder="Trade Name" value={taxpayerData.tradeName || ''} onChange={e => setTaxpayerData({...taxpayerData, tradeName: e.target.value})} className="w-full p-2 border rounded text-sm bg-white disabled:bg-slate-100" /></div>
+                                         <div>
+                                            <label className="text-xs text-slate-500 font-medium block mb-1">Trade Name</label>
+                                            <input disabled={!canEdit} placeholder="Trade Name" value={taxpayerData.tradeName || ''} onChange={e => setTaxpayerData({...taxpayerData, tradeName: e.target.value})} className="w-full p-2 border rounded text-sm bg-white disabled:bg-slate-100" />
+                                         </div>
+                                         <div>
+                                            <label className="text-xs text-slate-500 font-medium block mb-1">Legal Name</label>
+                                            <input disabled={!canEdit} placeholder="Legal Name" value={taxpayerData.legalName || ''} onChange={e => setTaxpayerData({...taxpayerData, legalName: e.target.value})} className="w-full p-2 border rounded text-sm bg-white disabled:bg-slate-100" />
+                                         </div>
+                                         <div className="grid grid-cols-2 gap-2">
+                                             <div>
+                                                <label className="text-xs text-slate-500 font-medium block mb-1">Mobile</label>
+                                                <input disabled={!canEdit} placeholder="Mobile" value={taxpayerData.mobile || ''} onChange={e => setTaxpayerData({...taxpayerData, mobile: e.target.value})} className="w-full p-2 border rounded text-sm bg-white disabled:bg-slate-100" />
+                                             </div>
+                                             <div>
+                                                <label className="text-xs text-slate-500 font-medium block mb-1">Email</label>
+                                                <input disabled={!canEdit} placeholder="Email" value={taxpayerData.email || ''} onChange={e => setTaxpayerData({...taxpayerData, email: e.target.value})} className="w-full p-2 border rounded text-sm bg-white disabled:bg-slate-100" />
+                                             </div>
+                                         </div>
+                                         <div>
+                                            <label className="text-xs text-slate-500 font-medium block mb-1">Registered Address</label>
+                                            <textarea disabled={!canEdit} placeholder="Full Address" value={taxpayerData.registeredAddress || ''} onChange={e => setTaxpayerData({...taxpayerData, registeredAddress: e.target.value})} className="w-full p-2 border rounded text-sm bg-white disabled:bg-slate-100 h-16 resize-none" />
+                                         </div>
                                          {canEdit && <button onClick={handleSaveTaxpayer} className="w-full bg-blue-600 text-white py-1.5 rounded text-sm hover:bg-blue-700">Save Taxpayer Details</button>}
                                     </div>
-                                ) : (linkedTaxpayer ? (<div className="text-sm space-y-1"><p className="font-bold text-slate-800">{linkedTaxpayer.tradeName}</p><p className="text-slate-500 text-xs">{linkedTaxpayer.legalName}</p><div className="flex items-start gap-2 text-slate-600 mt-2"><MapPin size={14} className="mt-0.5 text-slate-400 shrink-0"/><span className="text-xs">{linkedTaxpayer.registeredAddress || 'No Address'}</span></div></div>) : (<p className="text-xs text-slate-400 italic">No taxpayer linked.</p>))}
+                                ) : (linkedTaxpayer ? (
+                                    <div className="text-sm space-y-2">
+                                        <div>
+                                            <p className="font-bold text-slate-800">{linkedTaxpayer.tradeName}</p>
+                                            <p className="text-slate-500 text-xs">{linkedTaxpayer.legalName}</p>
+                                        </div>
+                                        {(linkedTaxpayer.mobile || linkedTaxpayer.email) && (
+                                            <div className="flex flex-wrap gap-3 text-xs text-slate-600">
+                                                {linkedTaxpayer.mobile && <div className="flex items-center gap-1"><Phone size={12}/> {linkedTaxpayer.mobile}</div>}
+                                                {linkedTaxpayer.email && <div className="flex items-center gap-1"><Mail size={12}/> {linkedTaxpayer.email}</div>}
+                                            </div>
+                                        )}
+                                        <div className="flex items-start gap-2 text-slate-600">
+                                            <MapPin size={14} className="mt-0.5 text-slate-400 shrink-0"/>
+                                            <span className="text-xs">{linkedTaxpayer.registeredAddress || 'No Address'}</span>
+                                        </div>
+                                    </div>
+                                ) : (<p className="text-xs text-slate-400 italic">No taxpayer linked.</p>))}
                             </div>
 
                             <div><div className="flex justify-between"><label className="block text-sm font-medium text-slate-700 flex items-center gap-1">Case ID (ARN)</label>{!isNew && formData.arn && canEdit && <button onClick={() => setShowSyncModal(true)} className="text-xs text-blue-600 hover:underline flex items-center gap-1"><RefreshCw size={12}/> Sync Linked</button>}</div><input disabled={!canEdit} type="text" value={formData.arn || ''} onChange={(e) => handleChange('arn', e.target.value)} className="w-full p-2.5 border border-slate-300 rounded-lg disabled:bg-slate-100" placeholder="ARN / Case Reference" /></div>
@@ -565,7 +605,24 @@ const NoticeDetail: React.FC = () => {
                         <div className="space-y-4">
                             <div><label className="block text-sm font-medium text-slate-700 flex items-center gap-1">Notice Number <span className="text-red-500">*</span></label><input disabled={!canEdit} type="text" value={formData.noticeNumber || ''} onChange={(e) => handleChange('noticeNumber', e.target.value)} className="w-full p-2.5 border border-slate-300 rounded-lg disabled:bg-slate-100" /></div>
                             <div><label className="block text-sm font-medium text-slate-700 flex items-center gap-1">Notice Type</label><select disabled={!canEdit} className="w-full p-2.5 border border-slate-300 rounded-lg bg-white disabled:bg-slate-100" value={formData.noticeType || ''} onChange={(e) => handleChange('noticeType', e.target.value)}><option value="">Select Type</option>{typeOptions.map((t: string) => <option key={t} value={t}>{t}</option>)}</select></div>
-                             <div className="grid grid-cols-2 gap-4"><div><label className="block text-sm font-medium text-slate-700 flex items-center gap-1">Section</label><input disabled={!canEdit} type="text" value={formData.section || ''} onChange={(e) => handleChange('section', e.target.value)} className="w-full p-2.5 border border-slate-300 rounded-lg disabled:bg-slate-100" /></div><div><label className="block text-sm font-medium text-slate-700 flex items-center gap-1">Period</label><input disabled={!canEdit} type="text" value={formData.period || ''} onChange={(e) => handleChange('period', e.target.value)} className="w-full p-2.5 border border-slate-300 rounded-lg disabled:bg-slate-100" /></div></div>
+                             <div className="grid grid-cols-2 gap-4">
+                                 <div>
+                                     <label className="block text-sm font-medium text-slate-700 flex items-center gap-1">Section</label>
+                                     <input disabled={!canEdit} type="text" value={formData.section || ''} onChange={(e) => handleChange('section', e.target.value)} className="w-full p-2.5 border border-slate-300 rounded-lg disabled:bg-slate-100" />
+                                 </div>
+                                 <div>
+                                     <label className="block text-sm font-medium text-slate-700 flex items-center gap-1">Period</label>
+                                     <select 
+                                        disabled={!canEdit} 
+                                        value={formData.period || ''} 
+                                        onChange={(e) => handleChange('period', e.target.value)} 
+                                        className="w-full p-2.5 border border-slate-300 rounded-lg bg-white disabled:bg-slate-100"
+                                     >
+                                        <option value="">Select Period</option>
+                                        {periodOptions.map((p: string) => <option key={p} value={p}>{p}</option>)}
+                                     </select>
+                                 </div>
+                             </div>
                         </div>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6"><div><label className="block text-sm font-medium text-slate-700 flex items-center gap-1">Date of Issue</label><input disabled={!canEdit} type="date" value={formData.dateOfIssue || ''} onChange={(e) => handleChange('dateOfIssue', e.target.value)} className="w-full p-2.5 border border-slate-300 rounded-lg disabled:bg-slate-100" /></div><div><label className="block text-sm font-medium text-slate-700 flex items-center gap-1">Due Date</label><input disabled={!canEdit} type="date" value={formData.dueDate || ''} onChange={(e) => handleChange('dueDate', e.target.value)} className="w-full p-2.5 border border-slate-300 rounded-lg disabled:bg-slate-100" /></div></div>

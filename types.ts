@@ -83,6 +83,10 @@ export interface Taxpayer {
   email: string;
   registeredAddress: string;
   stateCode: string;
+  // Jurisdictional Details
+  jurisdictionalAuthority?: string; // e.g. State Tax Officer / Superintendent
+  stateCircle?: string; // e.g. Pune Zone 1
+  centralRange?: string; // e.g. Range 5 Division 2
 }
 
 export interface Notice {

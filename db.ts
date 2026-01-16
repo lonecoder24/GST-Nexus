@@ -86,6 +86,19 @@ export const seedDatabase = async () => {
           ]
       });
       await db.appConfig.add({
+          key: 'notice_periods',
+          value: [
+              'FY 2017-18', 
+              'FY 2018-19', 
+              'FY 2019-20', 
+              'FY 2020-21', 
+              'FY 2021-22', 
+              'FY 2022-23', 
+              'FY 2023-24', 
+              'FY 2024-25'
+          ]
+      });
+      await db.appConfig.add({
           key: 'defect_types',
           value: [
             "ITC Mismatch (GSTR-3B vs GSTR-2A/2B)",
@@ -133,7 +146,10 @@ export const seedDatabase = async () => {
       mobile: '9876543210',
       email: 'accounts@acme.com',
       registeredAddress: '123 Market Road, Mumbai',
-      stateCode: '27'
+      stateCode: '27',
+      jurisdictionalAuthority: 'State Tax Officer',
+      stateCircle: 'MUM-ZONE-II',
+      centralRange: 'Range-1 Div-3'
     });
 
     const noticeId1 = await db.notices.add({
@@ -177,7 +193,10 @@ export const seedDatabase = async () => {
       mobile: '8888888888',
       email: 'tax@zenith.com',
       registeredAddress: '45 Industrial Area, Pune',
-      stateCode: '27'
+      stateCode: '27',
+      jurisdictionalAuthority: 'Superintendent',
+      stateCircle: 'PUN-ZONE-I',
+      centralRange: 'Range-5 Div-1'
     });
 
     const noticeId2 = await db.notices.add({

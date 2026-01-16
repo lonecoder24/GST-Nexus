@@ -4,7 +4,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
 import { Taxpayer } from '../types';
-import { Save, ArrowLeft, Building, FileText, ExternalLink } from 'lucide-react';
+import { Save, ArrowLeft, Building, FileText, ExternalLink, Map, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 const TaxpayerDetail: React.FC = () => {
@@ -14,7 +14,8 @@ const TaxpayerDetail: React.FC = () => {
   const isNew = id === 'new';
 
   const [formData, setFormData] = useState<Partial<Taxpayer>>({
-      gstin: '', tradeName: '', legalName: '', mobile: '', email: '', registeredAddress: '', stateCode: ''
+      gstin: '', tradeName: '', legalName: '', mobile: '', email: '', registeredAddress: '', stateCode: '',
+      jurisdictionalAuthority: '', stateCircle: '', centralRange: ''
   });
 
   useEffect(() => {
@@ -110,6 +111,47 @@ const TaxpayerDetail: React.FC = () => {
                        <label className="block text-sm font-medium text-slate-700 mb-1">Registered Address</label>
                        <textarea value={formData.registeredAddress} onChange={e => setFormData({...formData, registeredAddress: e.target.value})} 
                         className="w-full p-2 border border-slate-300 rounded h-20 resize-none" />
+                   </div>
+               </div>
+
+               <div className="flex items-center gap-3 mt-8 mb-6 pb-4 border-b border-slate-100">
+                    <div className="p-3 bg-purple-50 rounded-full text-purple-600"><Map size={24}/></div>
+                    <div>
+                        <h3 className="font-semibold text-slate-800">Jurisdictional Details</h3>
+                        <p className="text-xs text-slate-500">Mapping to Authority and Wards</p>
+                    </div>
+               </div>
+
+               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-50 p-4 rounded-lg border border-slate-200">
+                   <div>
+                       <label className="block text-xs font-bold text-slate-600 uppercase mb-1 flex items-center gap-1"><ShieldCheck size={12}/> Authority / Designation</label>
+                       <input 
+                            type="text" 
+                            placeholder="e.g. State Tax Officer"
+                            value={formData.jurisdictionalAuthority || ''} 
+                            onChange={e => setFormData({...formData, jurisdictionalAuthority: e.target.value})} 
+                            className="w-full p-2 border border-slate-300 rounded text-sm" 
+                       />
+                   </div>
+                   <div>
+                       <label className="block text-xs font-bold text-slate-600 uppercase mb-1">State Circle / Ward</label>
+                       <input 
+                            type="text" 
+                            placeholder="e.g. Pune Zone II"
+                            value={formData.stateCircle || ''} 
+                            onChange={e => setFormData({...formData, stateCircle: e.target.value})} 
+                            className="w-full p-2 border border-slate-300 rounded text-sm" 
+                       />
+                   </div>
+                   <div>
+                       <label className="block text-xs font-bold text-slate-600 uppercase mb-1">Central Range / Div</label>
+                       <input 
+                            type="text" 
+                            placeholder="e.g. Range I Div III"
+                            value={formData.centralRange || ''} 
+                            onChange={e => setFormData({...formData, centralRange: e.target.value})} 
+                            className="w-full p-2 border border-slate-300 rounded text-sm" 
+                       />
                    </div>
                </div>
 

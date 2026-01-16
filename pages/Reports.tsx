@@ -1,17 +1,19 @@
+
 import React, { useState, useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
-import { FileDown, PieChart, BarChart, FileText, Users, AlertCircle, Layers, ArrowUpDown, ChevronUp, ChevronDown, ListFilter, ArrowRight, User, Database, Link as LinkIcon, ExternalLink } from 'lucide-react';
+import { FileDown, PieChart, BarChart, FileText, Users, AlertCircle, Layers, ArrowUpDown, ChevronUp, ChevronDown, ListFilter, ArrowRight, User, Database, Link as LinkIcon, ExternalLink, Map } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { ResponsiveContainer, BarChart as ReBarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as ReTooltip, Legend, PieChart as RePieChart, Pie, Cell } from 'recharts';
 import { useNavigate } from 'react-router-dom';
 
 interface ArnData { arn: string; count: number; demand: number; paid: number; statuses: Set<string>; }
 interface DefectData { type: string; count: number; demand: number; }
+interface CircleData { circle: string; clientCount: number; noticeCount: number; demand: number; paid: number; }
 
 const Reports: React.FC = () => {
     const navigate = useNavigate();
-    const [activeTab, setActiveTab] = useState<'clients' | 'cases' | 'defects' | 'status' | 'powerbi'>('clients');
+    const [activeTab, setActiveTab] = useState<'clients' | 'cases' | 'defects' | 'status' | 'powerbi' | 'jurisdiction'>('clients');
     const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' } | null>(null);
     const [powerBiUrl, setPowerBiUrl] = useState('');
 
@@ -82,12 +84,42 @@ const Reports: React.FC = () => {
         return Object.values(stats).map((val: any) => ({ ...val, outstanding: val.demand - val.paid })).sort((a: any, b: any) => b.count - a.count);
     }, [notices, paymentMap]);
 
+    // Circle / Jurisdiction Report Logic
+    const circleReport = React.useMemo(() => {
+        const stats: Record<string, CircleData> = {};
+        
+        taxpayers.forEach(t => {
+            const circle = t.stateCircle || 'Unmapped Circle';
+            if (!stats[circle]) {
+                stats[circle] = { circle, clientCount: 0, noticeCount: 0, demand: 0, paid: 0 };
+            }
+            stats[circle].clientCount++;
+            
+            // Find notices for this taxpayer
+            const clientNotices = notices.filter(n => n.gstin === t.gstin);
+            stats[circle].noticeCount += clientNotices.length;
+            
+            const demand = clientNotices.reduce((sum, n) => sum + (n.demandAmount || 0), 0);
+            stats[circle].demand += demand;
+            
+            // Find paid
+            const noticeIds = new Set(clientNotices.map(n => n.id));
+            const paid = payments.filter(p => noticeIds.has(p.noticeId)).reduce((sum, p) => sum + p.amount, 0);
+            stats[circle].paid += paid;
+        });
+
+        return Object.values(stats)
+            .map(c => ({...c, outstanding: c.demand - c.paid}))
+            .sort((a,b) => b.demand - a.demand);
+    }, [taxpayers, notices, payments]);
+
     const exportToExcel = () => {
         const wb = XLSX.utils.book_new();
         let ws;
         if (activeTab === 'clients') ws = XLSX.utils.json_to_sheet(clientReport);
         else if (activeTab === 'cases') ws = XLSX.utils.json_to_sheet(arnReport.map(r => ({...r, statuses: undefined, status: r.statusStr})));
         else if (activeTab === 'defects') ws = XLSX.utils.json_to_sheet(defectReport);
+        else if (activeTab === 'jurisdiction') ws = XLSX.utils.json_to_sheet(circleReport);
         else ws = XLSX.utils.json_to_sheet(statusReport);
         XLSX.utils.book_append_sheet(wb, ws, "Report");
         XLSX.writeFile(wb, `GST_Nexus_Report_${activeTab}.xlsx`);
@@ -128,7 +160,7 @@ const Reports: React.FC = () => {
 
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden min-h-[600px]">
                 <div className="flex border-b border-slate-200 bg-slate-50 overflow-x-auto">
-                    {[ { id: 'clients', label: 'Client Wise', icon: Users }, { id: 'status', label: 'Status Summary', icon: ListFilter }, { id: 'cases', label: 'Case / ARN Wise', icon: Layers }, { id: 'defects', label: 'Defect Analysis', icon: AlertCircle }, { id: 'powerbi', label: 'Power BI', icon: BarChart } ].map(tab => (
+                    {[ { id: 'clients', label: 'Client Wise', icon: Users }, { id: 'jurisdiction', label: 'Jurisdiction', icon: Map }, { id: 'status', label: 'Status Summary', icon: ListFilter }, { id: 'cases', label: 'Case / ARN Wise', icon: Layers }, { id: 'defects', label: 'Defect Analysis', icon: AlertCircle }, { id: 'powerbi', label: 'Power BI', icon: BarChart } ].map(tab => (
                         <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} className={`flex-1 py-4 text-sm font-semibold border-b-2 transition-colors flex items-center justify-center gap-2 min-w-[140px] ${activeTab === tab.id ? 'border-blue-600 text-blue-600 bg-white' : 'border-transparent text-slate-500 hover:bg-slate-100'}`}><tab.icon size={16} /> {tab.label}</button>
                     ))}
                 </div>
@@ -182,6 +214,54 @@ const Reports: React.FC = () => {
                         </div>
                     )}
                     
+                    {activeTab === 'jurisdiction' && (
+                        <div className="space-y-6 animate-in fade-in">
+                            <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm mb-6">
+                                <h3 className="text-sm font-bold text-slate-700 mb-4 flex items-center gap-2"><PieChart size={16}/> Liability by State Circle</h3>
+                                <div className="h-72">
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <ReBarChart data={circleReport.slice(0, 10)} margin={{top: 20, right: 30, left: 20, bottom: 5}}>
+                                            <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                                            <XAxis dataKey="circle" fontSize={11} tick={{fill: '#64748b'}} interval={0} angle={-15} textAnchor="end" height={60} />
+                                            <YAxis fontSize={11} tick={{fill: '#64748b'}} />
+                                            <ReTooltip formatter={(value: number) => formatCurrency(value)} />
+                                            <Legend />
+                                            <Bar dataKey="demand" fill="#8884d8" name="Total Demand" radius={[4, 4, 0, 0]} barSize={30} />
+                                            <Bar dataKey="outstanding" fill="#ef4444" name="Outstanding" radius={[4, 4, 0, 0]} barSize={30} />
+                                        </ReBarChart>
+                                    </ResponsiveContainer>
+                                </div>
+                            </div>
+
+                            <div className="overflow-hidden border border-slate-200 rounded-xl shadow-sm">
+                                <table className="w-full text-sm text-left">
+                                    <thead className="bg-slate-50 text-slate-500 uppercase text-xs font-bold">
+                                        <tr>
+                                            <th className="px-6 py-4">State Circle / Zone</th>
+                                            <th className="px-6 py-4 text-center">Clients</th>
+                                            <th className="px-6 py-4 text-center">Notices</th>
+                                            <th className="px-6 py-4 text-right">Total Demand</th>
+                                            <th className="px-6 py-4 text-right">Paid</th>
+                                            <th className="px-6 py-4 text-right">Outstanding</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {circleReport.map((c, idx) => (
+                                            <tr key={idx} className="hover:bg-slate-50">
+                                                <td className="px-6 py-4 font-bold text-slate-800">{c.circle}</td>
+                                                <td className="px-6 py-4 text-center">{c.clientCount}</td>
+                                                <td className="px-6 py-4 text-center">{c.noticeCount}</td>
+                                                <td className="px-6 py-4 text-right">{formatCurrency(c.demand)}</td>
+                                                <td className="px-6 py-4 text-right text-green-600">{formatCurrency(c.paid)}</td>
+                                                <td className="px-6 py-4 text-right font-bold text-red-600">{formatCurrency(c.outstanding)}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    )}
+
                     {activeTab === 'cases' && (
                         <div className="space-y-6 animate-in fade-in">
                              <div className="overflow-hidden border border-slate-200 rounded-xl shadow-sm">
