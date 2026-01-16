@@ -4,7 +4,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
 import { Notice, NoticeStatus, RiskLevel, NoticeDefect, PaymentLog, TaxHeadValues, Taxpayer, DocumentMeta, Hearing, HearingStatus } from '../types';
-import { Save, ArrowLeft, Clock, FileText, Plus, Trash2, IndianRupee, Wallet, Calculator, Building, HelpCircle, History, RefreshCw, FileDown, Activity, ClipboardList, ChevronUp, ChevronDown, Filter, CreditCard, AlertCircle, Phone, Mail, MapPin, Edit, X, FolderOpen, UploadCloud, ScanText, File as FileIcon, Search, Eye, Download, Scale, Gavel, Calendar } from 'lucide-react';
+import { Save, ArrowLeft, Clock, FileText, Plus, Trash2, IndianRupee, Wallet, Calculator, Building, HelpCircle, History, RefreshCw, FileDown, Activity, ClipboardList, ChevronUp, ChevronDown, Filter, CreditCard, AlertCircle, Phone, Mail, MapPin, Edit, X, FolderOpen, UploadCloud, ScanText, File as FileIcon, Search, Eye, Download, Scale, Gavel, Calendar, CheckSquare } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -182,6 +182,11 @@ const NoticeDetail: React.FC = () => {
 
   const handleChange = (field: keyof Notice, value: any) => setFormData(prev => ({ ...prev, [field]: value }));
 
+  const handleMarkAsChecked = () => {
+      const today = new Date().toISOString().split('T')[0];
+      setFormData(prev => ({ ...prev, lastCheckedDate: today }));
+  };
+
   const handleSaveTaxpayer = async () => {
     if (!canEdit) return;
     if (!formData.gstin) return;
@@ -222,6 +227,7 @@ const NoticeDetail: React.FC = () => {
                 if(oldNotice.dueDate !== formData.dueDate) changes.push(`Due Date updated to ${formData.dueDate}`);
                 if(oldNotice.assignedTo !== formData.assignedTo) changes.push(`Assigned to ${formData.assignedTo || 'Unassigned'}`);
                 if(oldNotice.demandAmount !== formData.demandAmount) changes.push(`Demand Amount updated to ${formData.demandAmount}`);
+                if(oldNotice.lastCheckedDate !== formData.lastCheckedDate) changes.push(`Last Checked Date marked as ${formData.lastCheckedDate}`);
             }
             if (changes.length === 0) changes.push("Updated notice details");
             logDetails = changes.join(". ");
@@ -621,6 +627,28 @@ const NoticeDetail: React.FC = () => {
                                         <option value="">Select Period</option>
                                         {periodOptions.map((p: string) => <option key={p} value={p}>{p}</option>)}
                                      </select>
+                                 </div>
+                             </div>
+                             <div>
+                                 <label className="block text-sm font-medium text-slate-700 flex items-center gap-1">Last Checked Date</label>
+                                 <div className="flex gap-2">
+                                     <input 
+                                        disabled={!canEdit} 
+                                        type="date" 
+                                        value={formData.lastCheckedDate || ''} 
+                                        onChange={(e) => handleChange('lastCheckedDate', e.target.value)} 
+                                        className="w-full p-2.5 border border-slate-300 rounded-lg disabled:bg-slate-100" 
+                                     />
+                                     {canEdit && (
+                                         <button 
+                                            type="button" 
+                                            onClick={handleMarkAsChecked}
+                                            className="p-2.5 bg-blue-50 text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-100"
+                                            title="Mark as Checked Today"
+                                         >
+                                             <CheckSquare size={18} />
+                                         </button>
+                                     )}
                                  </div>
                              </div>
                         </div>

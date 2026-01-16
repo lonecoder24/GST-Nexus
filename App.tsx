@@ -15,6 +15,7 @@ import Reconciliation from './pages/Reconciliation';
 import CalendarView from './pages/CalendarView';
 import Returns from './pages/Returns';
 import TimeSheet from './pages/TimeSheet';
+import ClientStatus from './pages/ClientStatus';
 import { AuthProvider } from './contexts/AuthContext';
 import { seedDatabase } from './db';
 
@@ -35,6 +36,8 @@ const App: React.FC = () => {
             <Route path="/calendar" element={<CalendarView />} />
             <Route path="/notices" element={<NoticeList />} />
             <Route path="/notices/:id" element={<NoticeDetail />} />
+            
+            <Route path="/client-status" element={<ClientStatus />} />
             
             <Route path="/returns" element={<Returns />} />
             <Route path="/timesheets" element={<TimeSheet />} />

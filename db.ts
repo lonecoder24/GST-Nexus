@@ -21,9 +21,10 @@ export class GSTDatabase extends Dexie {
     super('GSTNexusDB');
     
     // Version 12: Updated timeSheets schema
+    // Added lastCheckedDate to notices
     (this as any).version(12).stores({
       taxpayers: '++id, &gstin, tradeName',
-      notices: '++id, gstin, noticeNumber, arn, noticeType, status, dueDate, riskLevel, assignedTo, hearingDate',
+      notices: '++id, gstin, noticeNumber, arn, noticeType, status, dueDate, riskLevel, assignedTo, hearingDate, lastCheckedDate',
       payments: '++id, noticeId, defectId, challanNumber, paymentDate, majorHead',
       auditLogs: '++id, entityId, timestamp, entityType',
       timeSheets: '++id, noticeId, teamMember, date',
@@ -168,7 +169,8 @@ export const seedDatabase = async () => {
       status: NoticeStatus.RECEIVED,
       description: 'Discrepancy in GSTR-1 vs GSTR-3B',
       assignedTo: 'rahul_ca',
-      tags: ['ITC Mismatch']
+      tags: ['ITC Mismatch'],
+      lastCheckedDate: new Date().toISOString().split('T')[0]
     });
 
     await db.defects.add({
@@ -311,43 +313,72 @@ export const checkAndGenerateNotifications = async () => {
             .toArray();
 
         for (const notice of activeNotices) {
+            let userId: number | undefined = undefined;
+            if (notice.assignedTo) {
+                const user = await db.users.where('username').equals(notice.assignedTo).first();
+                userId = user?.id;
+            }
+
+            // 1. Due Date Checks
             const dueDate = new Date(notice.dueDate);
             let type: 'info' | 'warning' | 'critical' | null = null;
             let message = '';
+            let title = '';
 
             if (dueDate < today) {
                 type = 'critical';
-                message = `Overdue: Notice ${notice.noticeNumber} for ${notice.gstin} was due on ${notice.dueDate}`;
+                title = 'Notice Overdue';
+                message = `Overdue: Notice ${notice.noticeNumber} was due on ${notice.dueDate}`;
             } else if (dueDate <= threeDaysFromNow) {
                 type = 'warning';
+                title = 'Approaching Deadline';
                 message = `Due Soon: Notice ${notice.noticeNumber} is due in ${Math.ceil((dueDate.getTime() - today.getTime()) / (1000 * 3600 * 24))} days.`;
             }
 
             if (type) {
                 const existing = await db.notifications
                     .where('link').equals(`/notices/${notice.id}`)
-                    .and(n => {
-                        const nDate = new Date(n.createdAt);
-                        return nDate.getDate() === today.getDate() && nDate.getMonth() === today.getMonth();
-                    })
+                    .and(n => n.title === title && !n.isRead)
                     .first();
 
                 if (!existing) {
-                    let userId: number | undefined = undefined;
-                    if (notice.assignedTo) {
-                        const user = await db.users.where('username').equals(notice.assignedTo).first();
-                        userId = user?.id;
-                    }
-
                     await db.notifications.add({
                         userId,
-                        title: type === 'critical' ? 'Notice Overdue' : 'Approaching Deadline',
+                        title,
                         message,
                         type,
                         link: `/notices/${notice.id}`,
                         isRead: false,
                         createdAt: new Date().toISOString()
                     });
+                }
+            }
+
+            // 2. SLA Breach Check (Last Checked Date > 7 Days)
+            if (notice.lastCheckedDate) {
+                const lastChecked = new Date(notice.lastCheckedDate);
+                const diffTime = Math.abs(today.getTime() - lastChecked.getTime());
+                const daysSinceCheck = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+                const SLA_THRESHOLD = 7;
+
+                if (daysSinceCheck > SLA_THRESHOLD) {
+                    const slaTitle = 'SLA Breach: Review Overdue';
+                    const existingSla = await db.notifications
+                        .where('link').equals(`/notices/${notice.id}`)
+                        .and(n => n.title === slaTitle && !n.isRead)
+                        .first();
+
+                    if (!existingSla) {
+                        await db.notifications.add({
+                            userId,
+                            title: slaTitle,
+                            message: `Notice ${notice.noticeNumber} hasn't been reviewed for ${daysSinceCheck} days (SLA: 7 days).`,
+                            type: 'warning',
+                            link: `/notices/${notice.id}`,
+                            isRead: false,
+                            createdAt: new Date().toISOString()
+                        });
+                    }
                 }
             }
         }

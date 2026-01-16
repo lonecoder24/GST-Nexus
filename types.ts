@@ -109,6 +109,7 @@ export interface Notice {
   assignedTo?: string; // Team member name (username)
   tags?: string[];
   isOverdue?: boolean; // Computed
+  lastCheckedDate?: string; // ISO Date - Last time the professional reviewed this case
   
   // Legacy fields (kept for migration safety, but UI will use hearings table)
   hearingDate?: string;
