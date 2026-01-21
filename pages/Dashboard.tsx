@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
-import { NoticeStatus, RiskLevel } from '../types';
+import { NoticeStatus, RiskLevel, Notice } from '../types';
 import StatsCard from '../components/StatsCard';
 import { AlertTriangle, Clock, FileText, ArrowRight, TrendingUp, PieChart as PieIcon, Gavel, CalendarClock, CreditCard, ShieldAlert, UserX, PenTool, ChevronRight } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
@@ -47,6 +47,9 @@ const Dashboard: React.FC = () => {
     drafting: 0
   });
 
+  // State for Chart Data
+  const [statusData, setStatusData] = useState<{name: string, value: number}[]>([]);
+
   useEffect(() => {
     if (notices && payments) {
       const now = new Date();
@@ -57,7 +60,56 @@ const Dashboard: React.FC = () => {
       const nextWeek = new Date(now);
       nextWeek.setDate(now.getDate() + 7);
 
-      const pendingCount = notices.filter(n => n.status !== NoticeStatus.CLOSED).length;
+      // Active Cases Calculation (Group by ARN)
+      const activeNotices = notices.filter(n => n.status !== NoticeStatus.CLOSED);
+      
+      // Group active notices by ARN to determine Case Status
+      const caseGroups: Record<string, Notice[]> = {};
+      activeNotices.forEach(n => {
+          const key = n.arn && n.arn.trim() !== '' ? n.arn : `_NO_ARN_${n.id}`;
+          if (!caseGroups[key]) caseGroups[key] = [];
+          caseGroups[key].push(n);
+      });
+
+      const pendingCasesCount = Object.keys(caseGroups).length;
+
+      // Determine status for each Case (Priority: Appeal > Hearing > Filed > Drafting > Received)
+      const getPriority = (status: string) => {
+          switch (status) {
+              case NoticeStatus.APPEAL: return 5;
+              case NoticeStatus.HEARING: return 4;
+              case NoticeStatus.FILED: return 3;
+              case NoticeStatus.DRAFTING: return 2;
+              case NoticeStatus.RECEIVED: return 1;
+              case NoticeStatus.ASSIGNED: return 1; 
+              default: return 0;
+          }
+      };
+
+      const statusCounts = { Received: 0, Drafting: 0, Filed: 0, Hearing: 0, Appeal: 0 };
+
+      Object.values(caseGroups).forEach(group => {
+          // Identify the most advanced status in the case
+          const representativeNotice = group.reduce((prev, curr) => 
+              getPriority(curr.status) > getPriority(prev.status) ? curr : prev
+          , group[0]);
+          
+          const s = representativeNotice.status;
+          if (s === NoticeStatus.RECEIVED || s === NoticeStatus.ASSIGNED) statusCounts.Received++;
+          else if (s === NoticeStatus.DRAFTING) statusCounts.Drafting++;
+          else if (s === NoticeStatus.FILED) statusCounts.Filed++;
+          else if (s === NoticeStatus.HEARING) statusCounts.Hearing++;
+          else if (s === NoticeStatus.APPEAL) statusCounts.Appeal++;
+      });
+
+      setStatusData([
+          { name: 'Received', value: statusCounts.Received },
+          { name: 'Drafting', value: statusCounts.Drafting },
+          { name: 'Filed', value: statusCounts.Filed },
+          { name: 'Hearing', value: statusCounts.Hearing },
+          { name: 'Appeal', value: statusCounts.Appeal },
+      ]);
+
       const overdueCount = notices.filter(n => new Date(n.dueDate) < now && n.status !== NoticeStatus.CLOSED).length;
       const totalDemand = notices.reduce((acc, curr) => acc + (curr.demandAmount || 0), 0);
       const totalPaid = payments.reduce((acc, curr) => acc + curr.amount, 0);
@@ -70,11 +122,6 @@ const Dashboard: React.FC = () => {
 
       const criticalCount = notices.filter(n => (n.riskLevel === RiskLevel.CRITICAL || n.riskLevel === RiskLevel.HIGH) && n.status !== NoticeStatus.CLOSED).length;
       
-      // Calculate hearings stats based on new table would be better, but for now we can infer or fetch.
-      // Since `pendingHearings` is limited, let's do a quick count from DB in a separate effect or just use a simpler method if perf allows.
-      // For dashboard summary, we can just rely on the `pendingHearings` length if it matches timeframe, or do a separate count.
-      // Let's assume stats.hearingsThisWeek logic needs to query the table.
-      
       db.hearings.where('date').between(now.toISOString().split('T')[0], nextWeek.toISOString().split('T')[0], true, true).count().then(count => {
           setStats(prev => ({ ...prev, hearingsThisWeek: count }));
       });
@@ -84,7 +131,7 @@ const Dashboard: React.FC = () => {
 
       setStats(prev => ({
         ...prev,
-        pending: pendingCount,
+        pending: pendingCasesCount,
         outstanding: totalDemand - totalPaid,
         overdue: overdueCount,
         monthRecovery: monthRec,
@@ -95,14 +142,6 @@ const Dashboard: React.FC = () => {
       }));
     }
   }, [notices, payments]);
-
-  const statusData = [
-    { name: 'Received', value: notices?.filter(n => n.status === NoticeStatus.RECEIVED).length || 0 },
-    { name: 'Drafting', value: notices?.filter(n => n.status === NoticeStatus.DRAFTING).length || 0 },
-    { name: 'Filed', value: notices?.filter(n => n.status === NoticeStatus.FILED).length || 0 },
-    { name: 'Hearing', value: notices?.filter(n => n.status === NoticeStatus.HEARING).length || 0 },
-    { name: 'Appeal', value: notices?.filter(n => n.status === NoticeStatus.APPEAL).length || 0 },
-  ];
 
   const formatCurrency = (amount: number) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumSignificantDigits: 3 }).format(amount);
 
@@ -125,11 +164,11 @@ const Dashboard: React.FC = () => {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatsCard 
-          title="Notices Pending" 
+          title="Active Cases" 
           value={stats.pending} 
           icon={FileText} 
           color="blue" 
-          trend="Active proceedings"
+          trend="Pending Proceedings"
           onClick={() => navigate('/notices')}
         />
         <StatsCard 
@@ -166,7 +205,7 @@ const Dashboard: React.FC = () => {
                 <div className="flex justify-between items-center mb-6">
                     <div>
                         <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><PieIcon size={20} className="text-blue-500"/> Workflow Status</h3>
-                        <p className="text-sm text-slate-500">Distribution of notices across stages</p>
+                        <p className="text-sm text-slate-500">Distribution of active cases across stages</p>
                     </div>
                     <button onClick={() => navigate('/reports')} className="text-sm text-blue-600 font-medium hover:bg-blue-50 px-3 py-1.5 rounded-lg transition-colors">Full Report</button>
                 </div>

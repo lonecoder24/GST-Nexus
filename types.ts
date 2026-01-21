@@ -155,6 +155,11 @@ export interface NoticeDefect {
   taxDemand: number;
   interestDemand: number;
   penaltyDemand: number;
+
+  // Waiver Status
+  status?: 'Open' | 'Waived';
+  waiverDate?: string;
+  waiverReason?: string;
 }
 
 export type MajorTaxHead = 'IGST' | 'CGST' | 'SGST' | 'Cess';
@@ -180,7 +185,7 @@ export interface PaymentLog {
 
 export interface AuditLog {
   id?: number;
-  entityType: 'Notice' | 'Payment' | 'Taxpayer' | 'System' | 'Auth' | 'Defect' | 'Reconciliation' | 'Document' | 'Hearing' | 'Return' | 'TimeSheet';
+  entityType: 'Notice' | 'Payment' | 'Taxpayer' | 'System' | 'Auth' | 'Defect' | 'Reconciliation' | 'Document' | 'Hearing' | 'Return' | 'TimeSheet' | 'Invoice';
   entityId: number | string;
   action: 'Create' | 'Update' | 'Delete' | 'StatusChange' | 'Login';
   timestamp: string;
@@ -250,4 +255,37 @@ export interface ReturnRecord {
   
   status: 'Filed' | 'Not Filed' | 'Submitted';
   sourceFile?: string; // Filename if imported
+}
+
+// BILLING & INVOICING
+export enum InvoiceStatus {
+  DRAFT = 'Draft',
+  SENT = 'Sent',
+  PAID = 'Paid',
+  CANCELLED = 'Cancelled'
+}
+
+export interface InvoiceItem {
+  description: string;
+  amount: number;
+  hsnCode?: string;
+  noticeId?: number; // Link specific line item to a notice work
+  arn?: string; // Link to Case ID
+}
+
+export interface Invoice {
+  id?: number;
+  invoiceNumber: string;
+  date: string;
+  dueDate: string;
+  paymentDate?: string; // New field for tracking
+  gstin: string; // Linked Taxpayer
+  taxpayerName: string; // Snapshot in case trade name changes
+  status: InvoiceStatus;
+  items: InvoiceItem[];
+  subTotal: number;
+  taxAmount: number; // 18%
+  totalAmount: number;
+  notes?: string;
+  createdBy: string;
 }

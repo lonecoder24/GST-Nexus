@@ -3,7 +3,7 @@ import React, { useState, useRef } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
 import { Notice, NoticeStatus, RiskLevel } from '../types';
-import { Plus, Search, Filter, Calendar, AlertCircle, X, Trash2, Upload, FileSpreadsheet, Download, Layers, Paperclip, UploadCloud } from 'lucide-react';
+import { Plus, Search, Filter, Calendar, AlertCircle, X, Trash2, Upload, FileSpreadsheet, Download, Layers, Paperclip, UploadCloud, FolderOpen } from 'lucide-react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import { useAuth } from '../contexts/AuthContext';
@@ -34,10 +34,12 @@ const NoticeList: React.FC = () => {
   
   const [selectedSection, setSelectedSection] = useState('');
   const [selectedDefectType, setSelectedDefectType] = useState(initialState?.defectType || '');
-  const [groupBy, setGroupBy] = useState<'none' | 'noticeType' | 'arn'>('none');
+  // Default to 'arn' to show notices grouped by Case ID
+  const [groupBy, setGroupBy] = useState<'none' | 'noticeType' | 'arn'>('arn');
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
 
   const users = useLiveQuery(() => db.users.filter(u => u.isActive === true).toArray());
+  const taxpayers = useLiveQuery(() => db.taxpayers.toArray()) || [];
   const configStatuses = useLiveQuery(() => db.appConfig.get({key: 'notice_statuses'}));
   const configDefectTypes = useLiveQuery(() => db.appConfig.get({key: 'defect_types'}));
   
@@ -69,7 +71,7 @@ const NoticeList: React.FC = () => {
         result = result.filter(n => noticeIdsWithDefect.has(n.id!));
     }
     return result.sort((a, b) => new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime());
-  }, [textSearch, selectedStatuses, selectedRisks, assignedTo, dateFrom, dateTo, dateType, selectedSection, selectedDefectType]);
+  }, [textSearch, selectedStatuses, selectedRisks, assignedTo, dateFrom, dateTo, dateType, selectedSection, selectedDefectType, taxpayers]);
 
   const handleDelete = async (id: number) => {
     if(confirm('Are you sure you want to delete this notice?')) {
@@ -147,12 +149,9 @@ const NoticeList: React.FC = () => {
       let successCount = 0;
 
       try {
-          // Iterate over selected notices
           for (const noticeId of selectedIds) {
-              // Iterate over files
               for (let i = 0; i < files.length; i++) {
                   const file = files[i];
-                  // Read file as ArrayBuffer
                   const arrayBuffer = await file.arrayBuffer();
                   
                   await db.documents.add({
@@ -161,7 +160,7 @@ const NoticeList: React.FC = () => {
                       fileType: file.type,
                       size: file.size,
                       uploadDate: timestamp,
-                      category: 'Other', // Default category for bulk upload
+                      category: 'Other',
                       fileData: new Blob([new Uint8Array(arrayBuffer)], {type: file.type})
                   });
 
@@ -183,7 +182,7 @@ const NoticeList: React.FC = () => {
       } finally {
           setIsBulkUploading(false);
           if (bulkUploadRef.current) bulkUploadRef.current.value = '';
-          setSelectedIds([]); // Optional: Clear selection after action
+          setSelectedIds([]); 
       }
   };
 
@@ -324,10 +323,32 @@ const NoticeList: React.FC = () => {
     }, {} as Record<string, Notice[]>);
   };
 
+  // Helper to extract case details for header
+  const getGroupSummary = (groupNotices: Notice[]) => {
+      if (groupBy !== 'arn') return null;
+      const firstNotice = groupNotices[0];
+      if (!firstNotice) return null;
+
+      const taxpayer = taxpayers.find(t => t.gstin === firstNotice.gstin);
+      const clientName = taxpayer ? taxpayer.tradeName : firstNotice.gstin;
+      const totalDemand = groupNotices.reduce((acc, n) => acc + (n.demandAmount || 0), 0);
+      
+      const statusCounts = groupNotices.reduce((acc, n) => {
+          acc[n.status] = (acc[n.status] || 0) + 1;
+          return acc;
+      }, {} as Record<string, number>);
+      
+      const statusSummary = Object.entries(statusCounts).map(([status, count]) => `${status} (${count})`).join(', ');
+
+      return { clientName, totalDemand, statusSummary };
+  };
+
   const clearFilters = () => {
     setTextSearch(''); setSelectedStatuses([]); setSelectedRisks([]); setDateFrom('');
     setDateTo(''); setAssignedTo(''); setSelectedSection(''); setSelectedDefectType('');
   };
+
+  const formatCurrency = (val: number) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumSignificantDigits: 3 }).format(val);
 
   return (
     <div className="flex flex-col h-full space-y-4">
@@ -348,7 +369,6 @@ const NoticeList: React.FC = () => {
           <div className="bg-slate-800 text-white p-3 rounded-lg flex items-center justify-between shadow-lg animate-in slide-in-from-top-2">
               <span className="font-semibold text-sm px-2 bg-slate-700 rounded">{selectedIds.length} Selected</span>
               <div className="flex items-center gap-3">
-                   {/* Bulk Upload Button */}
                   <button onClick={() => bulkUploadRef.current?.click()} className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 rounded text-xs font-medium">
                       {isBulkUploading ? 'Uploading...' : <><Paperclip size={14}/> Attach Files</>}
                   </button>
@@ -374,7 +394,14 @@ const NoticeList: React.FC = () => {
             <div className="w-full lg:w-72 bg-white p-5 rounded-xl shadow-sm border border-slate-200 overflow-y-auto flex-shrink-0 animate-in fade-in slide-in-from-left-4 duration-200">
                 <div className="flex justify-between items-center mb-4"><h3 className="font-semibold text-slate-800">Filters</h3><button onClick={clearFilters} className="text-xs text-blue-600 hover:underline">Clear</button></div>
                 <div className="space-y-4">
-                    <div className="bg-slate-50 p-3 rounded-lg border border-slate-200"><label className="text-xs font-bold text-slate-700 uppercase mb-2 block flex items-center gap-2"><Layers size={12}/> Group View</label><select className="w-full p-2 text-sm border border-slate-300 rounded bg-white" value={groupBy} onChange={(e: any) => setGroupBy(e.target.value)}><option value="none">No Grouping</option><option value="noticeType">By Notice Type</option><option value="arn">By Case ID (ARN)</option></select></div>
+                    <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
+                        <label className="text-xs font-bold text-slate-700 uppercase mb-2 block flex items-center gap-2"><Layers size={12}/> Group View</label>
+                        <select className="w-full p-2 text-sm border border-slate-300 rounded bg-white" value={groupBy} onChange={(e: any) => setGroupBy(e.target.value)}>
+                            <option value="arn">By Case ID (ARN)</option>
+                            <option value="noticeType">By Notice Type</option>
+                            <option value="none">No Grouping</option>
+                        </select>
+                    </div>
                     
                     <div>
                         <label className="text-xs font-medium text-slate-500 uppercase mb-1 block">Defect Type</label>
@@ -404,28 +431,101 @@ const NoticeList: React.FC = () => {
             </div>
         )}
 
-        <div className="flex-1 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
-            <div className="overflow-auto flex-1">
-                {Object.entries(groupedNotices()).map(([groupName, groupItems]) => (
-                    <div key={groupName}>
-                        {groupBy !== 'none' && <div className="bg-slate-100 px-4 py-2 font-bold text-slate-700 text-sm border-b border-slate-200 sticky top-0 z-10">{groupName} <span className="font-normal text-slate-500 text-xs ml-2">({groupItems.length})</span></div>}
+        <div className="flex-1 bg-gray-50 rounded-xl overflow-hidden flex flex-col">
+            <div className="overflow-auto flex-1 space-y-6">
+                {Object.entries(groupedNotices()).map(([groupName, groupItems]) => {
+                    const summary = groupBy === 'arn' ? getGroupSummary(groupItems) : null;
+                    const isUncategorized = groupName === 'No Case ID';
+                    
+                    const groupNoticeIds = groupItems.map(n => n.id!);
+                    const isGroupSelected = groupNoticeIds.every(id => selectedIds.includes(id));
+
+                    const handleGroupSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+                        if (e.target.checked) {
+                            // Add missing IDs from this group to selection
+                            const toAdd = groupNoticeIds.filter(id => !selectedIds.includes(id));
+                            setSelectedIds([...selectedIds, ...toAdd]);
+                        } else {
+                            // Remove all IDs from this group from selection
+                            setSelectedIds(selectedIds.filter(id => !groupNoticeIds.includes(id)));
+                        }
+                    };
+
+                    return (
+                    <div key={groupName} className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+                        {groupBy !== 'none' && (
+                            <div className={`px-4 py-3 border-b border-slate-200 flex flex-col sm:flex-row justify-between sm:items-center gap-2 sticky top-0 z-10 ${isUncategorized ? 'bg-slate-100' : 'bg-blue-50/50'}`}>
+                                <div className="flex items-start gap-3">
+                                    <div className="flex items-center gap-3">
+                                        <input
+                                            type="checkbox"
+                                            checked={isGroupSelected}
+                                            onChange={handleGroupSelect}
+                                            className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                            title="Select all notices in this group"
+                                        />
+                                        <div className={`p-2 rounded-lg shadow-sm border ${isUncategorized ? 'bg-slate-200 border-slate-300 text-slate-500' : 'bg-white border-blue-100 text-blue-600'}`}>
+                                            {groupBy === 'arn' ? <FolderOpen size={20}/> : <Layers size={20}/>}
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2">
+                                            {groupBy === 'arn' ? (isUncategorized ? 'Unlinked Notices' : `Case ID: ${groupName}`) : groupName}
+                                        </h3>
+                                        {summary ? (
+                                            <p className="text-xs text-slate-600 font-medium">
+                                                {summary.clientName}
+                                            </p>
+                                        ) : (
+                                            <p className="text-xs text-slate-500">{groupItems.length} Notices</p>
+                                        )}
+                                    </div>
+                                </div>
+                                {summary && !isUncategorized && (
+                                    <div className="text-right bg-white px-3 py-1 rounded border border-blue-100 shadow-sm">
+                                        <span className="block text-xs font-bold text-slate-700">Demand: {formatCurrency(summary.totalDemand)}</span>
+                                        <span className="block text-[10px] text-slate-500">{summary.statusSummary}</span>
+                                    </div>
+                                )}
+                            </div>
+                        )}
                         <table className="w-full text-left text-sm">
                             {groupBy === 'none' && <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase text-xs sticky top-0 z-10 shadow-sm"><tr><th className="px-4 py-4 w-10"><input type="checkbox" onChange={handleSelectAll} checked={notices && notices.length > 0 && selectedIds.length === notices.length} /></th><th className="px-6 py-4">Risk</th><th className="px-6 py-4">Notice Details</th><th className="px-6 py-4">Dates</th><th className="px-6 py-4">Status</th><th className="px-6 py-4">Assigned</th><th className="px-6 py-4 text-right">Actions</th></tr></thead>}
                             <tbody className="divide-y divide-slate-100">{groupItems.map((notice) => {
                                 const assignedUser = users?.find(u => u.username === notice.assignedTo);
                                 const assignedLabel = assignedUser ? assignedUser.fullName : notice.assignedTo;
                                 return (
-                                <tr key={notice.id} className={`hover:bg-slate-50 cursor-pointer ${selectedIds.includes(notice.id!) ? 'bg-blue-50/50' : ''}`} onClick={() => navigate(`/notices/${notice.id}`)}><td className="px-4 py-4" onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={selectedIds.includes(notice.id!)} onChange={() => handleRowSelect(notice.id!)} /></td><td className="px-6 py-4"><div className={`w-3 h-3 rounded-full ${notice.riskLevel === RiskLevel.CRITICAL ? 'bg-red-500 shadow-red-200' : notice.riskLevel === RiskLevel.HIGH ? 'bg-orange-500' : notice.riskLevel === RiskLevel.MEDIUM ? 'bg-amber-400' : 'bg-green-500'}`} title={notice.riskLevel}></div></td><td className="px-6 py-4"><div className="font-medium text-slate-900">{notice.noticeNumber}</div>{notice.arn && <div className="text-slate-500 text-xs mt-0.5">Case ID: {notice.arn}</div>}<div className="text-slate-500 text-xs mt-1 font-mono">{notice.gstin}</div><div className="flex gap-1 mt-1"><span className="px-2 py-0.5 bg-slate-100 text-slate-600 rounded text-xs border border-slate-200">{notice.noticeType || 'General'}</span><span className="px-2 py-0.5 bg-slate-100 text-slate-600 rounded text-xs border border-slate-200">{notice.section}</span></div></td><td className="px-6 py-4"><div className="text-xs text-slate-600">Issued: {notice.dateOfIssue}</div><div className={`flex items-center gap-1 mt-1 font-medium ${new Date(notice.dueDate) < new Date() && notice.status !== 'Closed' ? 'text-red-600' : 'text-slate-600'}`}><Calendar size={12} /> {notice.dueDate}</div></td><td className="px-6 py-4"><span className={`px-2 py-1 rounded-full text-xs font-semibold ${notice.status === 'Closed' ? 'bg-slate-100 text-slate-600' : notice.status === 'Hearing Scheduled' ? 'bg-purple-100 text-purple-700' : 'bg-blue-50 text-blue-600 border-blue-100'}`}>{notice.status}</span></td><td className="px-6 py-4">{notice.assignedTo ? <span className="text-xs bg-slate-100 px-2 py-1 rounded text-slate-600 truncate max-w-[120px] block" title={assignedLabel}>{assignedLabel}</span> : <span className="text-xs text-slate-400 italic">Unassigned</span>}</td>
-                                <td className="px-6 py-4 text-right">
-                                    <button onClick={(e) => { e.stopPropagation(); navigate(`/notices/${notice.id}`); }} className="text-blue-600 hover:text-blue-800 text-xs font-medium mr-3">Edit</button>
-                                    {checkPermission('delete_notices') && (
-                                        <button onClick={(e) => { e.stopPropagation(); handleDelete(notice.id!); }} className="text-red-500 hover:text-red-700 text-xs font-medium">Delete</button>
-                                    )}
+                                <tr key={notice.id} className={`hover:bg-slate-50 cursor-pointer ${selectedIds.includes(notice.id!) ? 'bg-blue-50/50' : ''}`} onClick={() => navigate(`/notices/${notice.id}`)}><td className="px-4 py-4 w-10 text-center align-top pt-5" onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={selectedIds.includes(notice.id!)} onChange={() => handleRowSelect(notice.id!)} /></td>
+                                <td className="px-6 py-4 align-top w-16 pt-5"><div className={`w-3 h-3 mx-auto rounded-full ${notice.riskLevel === RiskLevel.CRITICAL ? 'bg-red-500 shadow-red-200' : notice.riskLevel === RiskLevel.HIGH ? 'bg-orange-500' : notice.riskLevel === RiskLevel.MEDIUM ? 'bg-amber-400' : 'bg-green-500'}`} title={notice.riskLevel}></div></td>
+                                <td className="px-6 py-4">
+                                    <div className="font-bold text-slate-800 text-base">{notice.noticeNumber}</div>
+                                    {notice.arn && <div className="text-xs text-blue-600 font-semibold mt-0.5" title="Case ID (ARN)">Case ID: {notice.arn}</div>}
+                                    <div className="text-slate-500 text-xs mt-1 font-mono">{notice.gstin}</div>
+                                    <div className="flex flex-wrap gap-2 mt-2">
+                                        <span className="px-2 py-0.5 bg-slate-100 text-slate-700 rounded text-xs border border-slate-200 font-medium">{notice.noticeType || 'General'}</span>
+                                        <span className="px-2 py-0.5 bg-slate-50 text-slate-500 rounded text-xs border border-slate-200">{notice.section}</span>
+                                        <span className="px-2 py-0.5 bg-slate-50 text-slate-500 rounded text-xs border border-slate-200">{notice.period}</span>
+                                    </div>
+                                </td>
+                                <td className="px-6 py-4 align-top">
+                                    <div className="text-xs text-slate-500 mb-1">Issued: {notice.dateOfIssue}</div>
+                                    <div className={`flex items-center gap-1 font-medium text-sm ${new Date(notice.dueDate) < new Date() && notice.status !== 'Closed' ? 'text-red-600' : 'text-slate-700'}`}><Calendar size={14} /> {notice.dueDate}</div>
+                                </td>
+                                <td className="px-6 py-4 align-top"><span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${notice.status === 'Closed' ? 'bg-slate-100 text-slate-600' : notice.status === 'Hearing Scheduled' ? 'bg-purple-100 text-purple-700' : 'bg-blue-50 text-blue-600 border-blue-100'}`}>{notice.status}</span></td>
+                                <td className="px-6 py-4 align-top">{notice.assignedTo ? <span className="text-xs bg-slate-100 px-2 py-1 rounded text-slate-600 truncate max-w-[120px] block border border-slate-200" title={assignedLabel}>{assignedLabel}</span> : <span className="text-xs text-slate-400 italic">Unassigned</span>}</td>
+                                <td className="px-6 py-4 text-right align-top">
+                                    <div className="flex flex-col gap-2 items-end">
+                                        <button onClick={(e) => { e.stopPropagation(); navigate(`/notices/${notice.id}`); }} className="text-blue-600 hover:text-blue-800 text-xs font-medium border border-blue-100 bg-blue-50 px-3 py-1 rounded hover:bg-blue-100">Edit</button>
+                                        {checkPermission('delete_notices') && (
+                                            <button onClick={(e) => { e.stopPropagation(); handleDelete(notice.id!); }} className="text-red-500 hover:text-red-700 text-xs font-medium hover:underline">Delete</button>
+                                        )}
+                                    </div>
                                 </td></tr>
                             )})}</tbody>
                         </table>
                     </div>
-                ))}
+                    )
+                })}
                 {!notices?.length && <div className="p-12 text-center text-slate-400"><AlertCircle size={48} className="mx-auto mb-2 opacity-50"/>No notices found.</div>}
             </div>
             <div className="bg-slate-50 p-2 border-t border-slate-200 text-xs text-slate-500 text-right">Total Records: {notices?.length || 0}</div>

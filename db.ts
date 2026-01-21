@@ -1,6 +1,6 @@
 
 import Dexie, { Table } from 'dexie';
-import { Taxpayer, Notice, PaymentLog, AuditLog, TeamTimeSheet, DocumentMeta, RiskLevel, NoticeStatus, User, Notification, AppConfig, UserRole, NoticeDefect, ReconciliationRecord, DEFAULT_ROLE_PERMISSIONS, Hearing, ReturnRecord } from './types';
+import { Taxpayer, Notice, PaymentLog, AuditLog, TeamTimeSheet, DocumentMeta, RiskLevel, NoticeStatus, User, Notification, AppConfig, UserRole, NoticeDefect, ReconciliationRecord, DEFAULT_ROLE_PERMISSIONS, Hearing, ReturnRecord, Invoice } from './types';
 
 export class GSTDatabase extends Dexie {
   taxpayers!: Table<Taxpayer>;
@@ -16,13 +16,13 @@ export class GSTDatabase extends Dexie {
   reconciliations!: Table<ReconciliationRecord>;
   hearings!: Table<Hearing>;
   returns!: Table<ReturnRecord>;
+  invoices!: Table<Invoice>;
 
   constructor() {
     super('GSTNexusDB');
     
-    // Version 12: Updated timeSheets schema
-    // Added lastCheckedDate to notices
-    (this as any).version(12).stores({
+    // Version 13: Added Invoices table
+    (this as any).version(13).stores({
       taxpayers: '++id, &gstin, tradeName',
       notices: '++id, gstin, noticeNumber, arn, noticeType, status, dueDate, riskLevel, assignedTo, hearingDate, lastCheckedDate',
       payments: '++id, noticeId, defectId, challanNumber, paymentDate, majorHead',
@@ -35,7 +35,8 @@ export class GSTDatabase extends Dexie {
       defects: '++id, noticeId',
       reconciliations: '++id, gstin, noticeId, type, financialYear',
       hearings: '++id, noticeId, date, status',
-      returns: '++id, gstin, returnType, period, financialYear'
+      returns: '++id, gstin, returnType, period, financialYear',
+      invoices: '++id, invoiceNumber, gstin, date, status'
     });
   }
 }
@@ -123,6 +124,11 @@ export const seedDatabase = async () => {
             UserRole.SENIOR_ASSOCIATE,
             UserRole.ASSOCIATE
         ]
+    });
+    // Default Notification Settings
+    await db.appConfig.add({
+        key: 'notification_reminder_days',
+        value: 3
     });
   }
 
@@ -304,8 +310,13 @@ export const seedDatabase = async () => {
 export const checkAndGenerateNotifications = async () => {
     try {
         const today = new Date();
-        const threeDaysFromNow = new Date();
-        threeDaysFromNow.setDate(today.getDate() + 3);
+        
+        // Fetch dynamic configuration
+        const config = await db.appConfig.get({ key: 'notification_reminder_days' });
+        const reminderDays = config && config.value ? Number(config.value) : 3;
+
+        const targetDate = new Date();
+        targetDate.setDate(today.getDate() + reminderDays);
 
         const activeNotices = await db.notices
             .where('status')
@@ -329,7 +340,7 @@ export const checkAndGenerateNotifications = async () => {
                 type = 'critical';
                 title = 'Notice Overdue';
                 message = `Overdue: Notice ${notice.noticeNumber} was due on ${notice.dueDate}`;
-            } else if (dueDate <= threeDaysFromNow) {
+            } else if (dueDate <= targetDate) {
                 type = 'warning';
                 title = 'Approaching Deadline';
                 message = `Due Soon: Notice ${notice.noticeNumber} is due in ${Math.ceil((dueDate.getTime() - today.getTime()) / (1000 * 3600 * 24))} days.`;

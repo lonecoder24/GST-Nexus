@@ -16,6 +16,7 @@ import CalendarView from './pages/CalendarView';
 import Returns from './pages/Returns';
 import TimeSheet from './pages/TimeSheet';
 import ClientStatus from './pages/ClientStatus';
+import Billing from './pages/Billing';
 import { AuthProvider } from './contexts/AuthContext';
 import { seedDatabase } from './db';
 
@@ -41,6 +42,7 @@ const App: React.FC = () => {
             
             <Route path="/returns" element={<Returns />} />
             <Route path="/timesheets" element={<TimeSheet />} />
+            <Route path="/billing" element={<Billing />} />
             
             <Route path="/taxpayers" element={<TaxpayerList />} />
             <Route path="/taxpayers/:id" element={<TaxpayerDetail />} />

@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
 import { UserRole, ALL_PERMISSIONS, PermissionType, User } from '../types';
-import { Trash2, UserPlus, Save, Shield, Settings, Plus, X, AlertOctagon, Users, Calculator, Calendar, ToggleLeft, ToggleRight, Info, CheckCircle, Lock, Edit2, Database, Download, Upload, Globe, Key, Wifi, MapPin, List } from 'lucide-react';
+import { Trash2, UserPlus, Save, Shield, Settings, Plus, X, AlertOctagon, Users, Calculator, Calendar, ToggleLeft, ToggleRight, Info, CheckCircle, Lock, Edit2, Database, Download, Upload, Globe, Key, Wifi, MapPin, List, Bell } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 const AdminSettings: React.FC = () => {
@@ -20,6 +20,7 @@ const AdminSettings: React.FC = () => {
   
   // Config State
   const [newConfigInput, setNewConfigInput] = useState<Record<string, string>>({});
+  const [reminderDays, setReminderDays] = useState(3);
 
   // Password Reset State
   const [showPasswordModal, setShowPasswordModal] = useState(false);
@@ -58,6 +59,13 @@ const AdminSettings: React.FC = () => {
                   clientId: config.value.clientId || '',
                   clientSecret: config.value.clientSecret || ''
               });
+          }
+      });
+
+      // Load Notification Config
+      db.appConfig.get({ key: 'notification_reminder_days' }).then(config => {
+          if (config && config.value) {
+              setReminderDays(Number(config.value));
           }
       });
   }, []);
@@ -169,6 +177,26 @@ const AdminSettings: React.FC = () => {
       });
   };
 
+  const handleSaveNotificationSettings = async (e: React.FormEvent) => {
+      e.preventDefault();
+      try {
+          const key = 'notification_reminder_days';
+          const config = await db.appConfig.get({ key });
+          if (config) {
+              await db.appConfig.update(config.id!, { value: reminderDays });
+          } else {
+              await db.appConfig.add({ key, value: reminderDays });
+          }
+          await db.auditLogs.add({
+              entityType: 'System', entityId: 'CONFIG', action: 'Update', timestamp: new Date().toISOString(),
+              user: currentUser?.username || 'System', details: `Set Notification Reminder to ${reminderDays} days`
+          });
+          alert('Notification settings updated.');
+      } catch (e) {
+          alert('Error saving notification settings');
+      }
+  };
+
   const handleBulkInterestUpdate = async () => {
     const confirmation = confirm(`This will recalculate interest for ALL open notices (Status ≠ Closed).
     \nParameters:
@@ -253,7 +281,8 @@ const AdminSettings: React.FC = () => {
   const handleBackup = async () => {
       try {
           const exportData: Record<string, any[]> = {};
-          for (const table of db.tables) {
+          // Cast to any to access tables property dynamically which is present in Dexie instance
+          for (const table of (db as any).tables) {
               exportData[table.name] = await table.toArray();
           }
           const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
@@ -284,12 +313,15 @@ const AdminSettings: React.FC = () => {
       reader.onload = async (ev) => {
           try {
               const importedData = JSON.parse(ev.target?.result as string);
-              await db.transaction('rw', db.tables, async () => {
-                  for (const table of db.tables) {
+              // Cast to any to access dynamic properties transaction, tables and table()
+              const dbAny = db as any;
+              
+              await dbAny.transaction('rw', dbAny.tables, async () => {
+                  for (const table of dbAny.tables) {
                       await table.clear();
                   }
                   for (const tableName of Object.keys(importedData)) {
-                      const table = db.table(tableName);
+                      const table = dbAny.table(tableName);
                       if (table) {
                           await table.bulkAdd(importedData[tableName]);
                       }
@@ -363,13 +395,13 @@ const AdminSettings: React.FC = () => {
 
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden min-h-[500px]">
          <div className="flex border-b border-slate-200 overflow-x-auto">
-            {['users', 'config', 'api', 'maintenance', 'data'].map(tab => (
+            {['users', 'config', 'notifications', 'api', 'maintenance', 'data'].map(tab => (
                 <button 
                     key={tab}
                     onClick={() => setActiveTab(tab)}
                     className={`px-8 py-5 text-sm font-semibold border-b-2 transition-all capitalize ${activeTab === tab ? 'border-blue-600 text-blue-600 bg-blue-50/30' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
                 >
-                    {tab === 'config' ? 'System Configuration' : tab === 'api' ? 'API Integration' : tab === 'maintenance' ? 'Maintenance & Tools' : tab === 'data' ? 'Data Management' : 'User Management'}
+                    {tab === 'config' ? 'System Configuration' : tab === 'notifications' ? 'Notifications' : tab === 'api' ? 'API Integration' : tab === 'maintenance' ? 'Maintenance & Tools' : tab === 'data' ? 'Data Management' : 'User Management'}
                 </button>
             ))}
          </div>
@@ -536,6 +568,45 @@ const AdminSettings: React.FC = () => {
                  </div>
              )}
 
+             {activeTab === 'notifications' && (
+                 <div className="max-w-2xl mx-auto animate-in fade-in zoom-in-95">
+                     <div className="bg-white border border-slate-200 rounded-2xl p-8 shadow-sm">
+                         <div className="flex items-start gap-4 mb-6">
+                             <div className="p-3 bg-amber-100 text-amber-600 rounded-xl"><Bell size={28}/></div>
+                             <div>
+                                 <h3 className="text-xl font-bold text-slate-800">Notification Settings</h3>
+                                 <p className="text-slate-500 text-sm mt-1">Configure automated alerts for upcoming due dates.</p>
+                             </div>
+                         </div>
+                         
+                         <form onSubmit={handleSaveNotificationSettings} className="space-y-6">
+                             <div>
+                                 <label className="block text-sm font-bold text-slate-700 mb-2">Reminder Trigger (Days)</label>
+                                 <p className="text-xs text-slate-500 mb-2">Automatically trigger a 'Due Soon' warning when a notice's due date is within this many days.</p>
+                                 <div className="flex items-center gap-3">
+                                     <input 
+                                        type="number" 
+                                        min="1" 
+                                        max="30"
+                                        value={reminderDays} 
+                                        onChange={e => setReminderDays(Number(e.target.value))} 
+                                        className="w-24 p-3 border border-slate-300 rounded-xl text-center text-lg font-bold outline-none focus:ring-2 focus:ring-amber-500" 
+                                        required 
+                                     />
+                                     <span className="text-slate-600 font-medium">Days before due date</span>
+                                 </div>
+                             </div>
+                             
+                             <div className="pt-4">
+                                 <button type="submit" className="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold py-3 rounded-xl transition-colors shadow-md">
+                                     Save Settings
+                                 </button>
+                             </div>
+                         </form>
+                     </div>
+                 </div>
+             )}
+
              {activeTab === 'api' && (
                  <div className="max-w-2xl mx-auto animate-in fade-in zoom-in-95">
                      <div className="bg-white border border-slate-200 rounded-2xl p-8 shadow-sm">
@@ -579,7 +650,7 @@ const AdminSettings: React.FC = () => {
                  </div>
              )}
 
-             {/* Maintenance and Data tabs... (Same as before) */}
+             {/* Maintenance Tab */}
              {activeTab === 'maintenance' && (
                  <div className="max-w-2xl mx-auto space-y-8 animate-in fade-in zoom-in-95">
                      <div className="bg-gradient-to-br from-white to-slate-50 border border-slate-200 rounded-2xl p-8 shadow-sm">

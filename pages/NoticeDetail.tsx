@@ -1,10 +1,10 @@
 
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
 import { Notice, NoticeStatus, RiskLevel, NoticeDefect, PaymentLog, TaxHeadValues, Taxpayer, DocumentMeta, Hearing, HearingStatus } from '../types';
-import { Save, ArrowLeft, Clock, FileText, Plus, Trash2, IndianRupee, Wallet, Calculator, Building, HelpCircle, History, RefreshCw, FileDown, Activity, ClipboardList, ChevronUp, ChevronDown, Filter, CreditCard, AlertCircle, Phone, Mail, MapPin, Edit, X, FolderOpen, UploadCloud, ScanText, File as FileIcon, Search, Eye, Download, Scale, Gavel, Calendar, CheckSquare } from 'lucide-react';
+import { Save, ArrowLeft, Clock, FileText, Plus, Trash2, IndianRupee, Wallet, Calculator, Building, HelpCircle, History, RefreshCw, FileDown, Activity, ClipboardList, ChevronUp, ChevronDown, Filter, CreditCard, AlertCircle, Phone, Mail, MapPin, Edit, X, FolderOpen, UploadCloud, ScanText, File as FileIcon, Search, Eye, Download, Scale, Gavel, Calendar, CheckSquare, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -128,6 +128,10 @@ const NoticeDetail: React.FC = () => {
   const [showDefectModal, setShowDefectModal] = useState(false);
   const [currentDefect, setCurrentDefect] = useState<Partial<NoticeDefect>>({ defectType: '', section: '', description: '', igst: { ...initialTaxHead }, cgst: { ...initialTaxHead }, sgst: { ...initialTaxHead }, cess: { ...initialTaxHead } });
 
+  // Waiver State
+  const [showWaiverModal, setShowWaiverModal] = useState(false);
+  const [waiverDetails, setWaiverDetails] = useState({ id: 0, date: new Date().toISOString().split('T')[0], reason: '' });
+
   // Calculator State (In Modal)
   const [calcRate, setCalcRate] = useState(18);
   const [calcFromDate, setCalcFromDate] = useState('');
@@ -158,6 +162,40 @@ const NoticeDetail: React.FC = () => {
       minutes: ''
   });
 
+  // Derived Options to handle imported values
+  const finalTypeOptions = useMemo(() => {
+      const opts = [...typeOptions];
+      if (formData.noticeType && !opts.includes(formData.noticeType)) {
+          opts.push(formData.noticeType);
+      }
+      return opts;
+  }, [typeOptions, formData.noticeType]);
+
+  const finalPeriodOptions = useMemo(() => {
+      const opts = [...periodOptions];
+      if (formData.period && !opts.includes(formData.period)) {
+          opts.push(formData.period);
+      }
+      return opts;
+  }, [periodOptions, formData.period]);
+
+  const finalTaxpayerOptions = useMemo(() => {
+      const exists = taxpayersList.find(t => t.gstin === formData.gstin);
+      if (formData.gstin && !exists) {
+          return [...taxpayersList, { 
+              id: -1, 
+              gstin: formData.gstin, 
+              tradeName: 'Unregistered Taxpayer (Imported)', 
+              legalName: '', 
+              mobile: '', 
+              email: '', 
+              registeredAddress: '', 
+              stateCode: '' 
+          } as Taxpayer];
+      }
+      return taxpayersList;
+  }, [taxpayersList, formData.gstin]);
+
   // Permission Checks
   const canEdit = checkPermission('edit_notices') || (isNew && checkPermission('create_notices'));
   const canDelete = checkPermission('delete_notices');
@@ -175,7 +213,11 @@ const NoticeDetail: React.FC = () => {
       if (formData.gstin) {
           if (formData.gstin.length === 15 && GSTIN_REGEX.test(formData.gstin)) {
                  setGstinError('');
-                 db.taxpayers.where('gstin').equals(formData.gstin).first().then(t => { setLinkedTaxpayer(t || null); if(t) setTaxpayerData(t); else setTaxpayerData({ gstin: formData.gstin, tradeName: '', legalName: '', registeredAddress: '', mobile: '', email: '' }); });
+                 db.taxpayers.where('gstin').equals(formData.gstin).first().then(t => { 
+                     setLinkedTaxpayer(t || null); 
+                     if(t) setTaxpayerData(t); 
+                     else setTaxpayerData({ gstin: formData.gstin, tradeName: '', legalName: '', registeredAddress: '', mobile: '', email: '' }); 
+                 });
           } else { setGstinError(formData.gstin.length !== 15 ? 'GSTIN must be 15 characters' : 'Invalid GSTIN format'); setLinkedTaxpayer(null); }
       }
   }, [formData.gstin]);
@@ -258,54 +300,6 @@ const NoticeDetail: React.FC = () => {
       alert(`Successfully updated ${targets.length} linked notices.`); setShowSyncModal(false);
   };
 
-  const handleUpdateInterestTillToday = async () => {
-    if (!canEdit) return;
-    const rate = parseFloat(prompt("Enter Annual Interest Rate (%)", "18") || "0");
-    if (!rate) return;
-
-    if (!confirm(`Recalculate interest for all defects @ ${rate}% from Due Date till Today? This will overwrite existing interest values.`)) return;
-
-    try {
-        const today = new Date();
-        const dueDate = new Date(formData.dueDate!); // Assuming dueDate exists
-        if (isNaN(dueDate.getTime())) { alert("Notice Due Date is invalid."); return; }
-
-        const diffTime = today.getTime() - dueDate.getTime();
-        const days = Math.ceil(diffTime / (1000 * 3600 * 24));
-        
-        if (days <= 0) { alert("Due date is in the future or today. No interest applicable."); return; }
-
-        const currentDefects = await db.defects.where('noticeId').equals(noticeId!).toArray();
-
-        for (const defect of currentDefects) {
-            const calc = (tax: number) => Math.round((tax * rate * days) / 36500);
-            
-            const updates = {
-                igst: { ...defect.igst, interest: calc(defect.igst.tax) },
-                cgst: { ...defect.cgst, interest: calc(defect.cgst.tax) },
-                sgst: { ...defect.sgst, interest: calc(defect.sgst.tax) },
-                cess: { ...defect.cess, interest: calc(defect.cess.tax) }
-            };
-            
-            await db.defects.update(defect.id!, {
-                ...updates,
-                interestDemand: updates.igst.interest + updates.cgst.interest + updates.sgst.interest + updates.cess.interest,
-            });
-        }
-        
-        await updateTotalDemand(noticeId!); 
-        await db.auditLogs.add({
-            entityType: 'Notice', entityId: noticeId!, action: 'Update', timestamp: new Date().toISOString(),
-            user: user?.username || 'System', details: `Bulk Interest Recalculation (Individual Notice) @ ${rate}%`
-        });
-        
-        alert("Interest updated successfully.");
-    } catch (e) {
-        console.error(e);
-        alert("Error updating interest.");
-    }
-  }
-
   // --- DEFECT MODAL LOGIC ---
 
   const handleEditDefect = (defect: NoticeDefect) => {
@@ -353,6 +347,29 @@ const NoticeDetail: React.FC = () => {
   const handleDeleteDefect = async (id: number) => { 
       if (!canEdit) return;
       if(confirm('Delete?')) { await db.defects.delete(id); await db.auditLogs.add({ entityType: 'Notice', entityId: noticeId!, action: 'Update', timestamp: new Date().toISOString(), user: user?.username || 'System', details: `Deleted Defect #${id}` }); updateTotalDemand(noticeId!); } 
+  };
+
+  const handleOpenWaiverModal = (id: number) => {
+      setWaiverDetails({ id, date: new Date().toISOString().split('T')[0], reason: '' });
+      setShowWaiverModal(true);
+  };
+
+  const handleWaiveDefect = async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!canEdit) return;
+      
+      await db.defects.update(waiverDetails.id, {
+          status: 'Waived',
+          waiverDate: waiverDetails.date,
+          waiverReason: waiverDetails.reason
+      });
+
+      await db.auditLogs.add({
+          entityType: 'Notice', entityId: noticeId!, action: 'Update', timestamp: new Date().toISOString(),
+          user: user?.username || 'System', details: `Waived Defect #${waiverDetails.id} - Reason: ${waiverDetails.reason}`
+      });
+
+      setShowWaiverModal(false);
   };
   
   // Specific Interest Calculator in Modal
@@ -529,6 +546,57 @@ const NoticeDetail: React.FC = () => {
       }
   };
 
+  const handleUpdateInterestTillToday = async () => {
+    if (!canEdit) return;
+    const rate = parseFloat(prompt("Enter Annual Interest Rate (%)", "18") || "0");
+    if (!rate) return;
+
+    if (!confirm(`Recalculate interest for all defects @ ${rate}% from Due Date till Today? This will overwrite existing interest values.`)) return;
+
+    try {
+        const today = new Date();
+        const dueDate = new Date(formData.dueDate!); // Assuming dueDate exists
+        if (isNaN(dueDate.getTime())) { alert("Notice Due Date is invalid."); return; }
+
+        const diffTime = today.getTime() - dueDate.getTime();
+        const days = Math.ceil(diffTime / (1000 * 3600 * 24));
+        
+        if (days <= 0) { alert("Due date is in the future or today. No interest applicable."); return; }
+
+        const currentDefects = await db.defects.where('noticeId').equals(noticeId!).toArray();
+
+        for (const defect of currentDefects) {
+            // Skip waived defects
+            if (defect.status === 'Waived') continue;
+
+            const calc = (tax: number) => Math.round((tax * rate * days) / 36500);
+            
+            const updates = {
+                igst: { ...defect.igst, interest: calc(defect.igst.tax) },
+                cgst: { ...defect.cgst, interest: calc(defect.cgst.tax) },
+                sgst: { ...defect.sgst, interest: calc(defect.sgst.tax) },
+                cess: { ...defect.cess, interest: calc(defect.cess.tax) }
+            };
+            
+            await db.defects.update(defect.id!, {
+                ...updates,
+                interestDemand: updates.igst.interest + updates.cgst.interest + updates.sgst.interest + updates.cess.interest,
+            });
+        }
+        
+        await updateTotalDemand(noticeId!); 
+        await db.auditLogs.add({
+            entityType: 'Notice', entityId: noticeId!, action: 'Update', timestamp: new Date().toISOString(),
+            user: user?.username || 'System', details: `Bulk Interest Recalculation (Individual Notice) @ ${rate}%`
+        });
+        
+        alert("Interest updated successfully.");
+    } catch (e) {
+        console.error(e);
+        alert("Error updating interest.");
+    }
+  }
+
   if (loading) return <div className="p-8 text-center text-slate-500">Loading...</div>;
 
   return (
@@ -552,7 +620,7 @@ const NoticeDetail: React.FC = () => {
                 <div className="space-y-6 animate-in fade-in duration-300">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div className="space-y-4">
-                            <div><label className="block text-sm font-medium text-slate-700 mb-1">Select Taxpayer (GSTIN) <span className="text-red-500">*</span></label><div className="flex gap-2"><select disabled={!canEdit} value={formData.gstin || ''} onChange={(e) => handleChange('gstin', e.target.value)} className={`flex-1 p-2.5 border rounded-lg bg-white ${gstinError ? 'border-red-300' : 'border-slate-300'} disabled:bg-slate-100`}><option value="">-- Select Client --</option>{taxpayersList.map(t => (<option key={t.id} value={t.gstin}>{t.tradeName} - {t.gstin}</option>))}</select><Link to="/taxpayers/new" className="bg-slate-100 border border-slate-300 text-slate-600 p-2.5 rounded-lg hover:bg-slate-200" title="Add New Taxpayer"><Plus size={20}/></Link></div>{gstinError && <span className="text-xs text-red-500 mt-1 block">{gstinError}</span>}</div>
+                            <div><label className="block text-sm font-medium text-slate-700 mb-1">Select Taxpayer (GSTIN) <span className="text-red-500">*</span></label><div className="flex gap-2"><select disabled={!canEdit} value={formData.gstin || ''} onChange={(e) => handleChange('gstin', e.target.value)} className={`flex-1 p-2.5 border rounded-lg bg-white ${gstinError ? 'border-red-300' : 'border-slate-300'} disabled:bg-slate-100`}><option value="">-- Select Client --</option>{finalTaxpayerOptions.map(t => (<option key={t.id} value={t.gstin}>{t.tradeName} - {t.gstin}</option>))}</select><Link to="/taxpayers/new" className="bg-slate-100 border border-slate-300 text-slate-600 p-2.5 rounded-lg hover:bg-slate-200" title="Add New Taxpayer"><Plus size={20}/></Link></div>{gstinError && <span className="text-xs text-red-500 mt-1 block">{gstinError}</span>}</div>
                             
                             <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 mt-2">
                                 <div className="flex justify-between items-center mb-3"><h4 className="font-semibold text-slate-700 flex items-center gap-2 text-sm"><Building size={16}/> Taxpayer Details</h4><button onClick={() => setIsEditingTaxpayer(!isEditingTaxpayer)} className="text-xs text-blue-600 hover:underline">{isEditingTaxpayer ? 'Cancel' : (linkedTaxpayer ? 'Edit' : 'Add Details')}</button></div>
@@ -610,7 +678,7 @@ const NoticeDetail: React.FC = () => {
                         </div>
                         <div className="space-y-4">
                             <div><label className="block text-sm font-medium text-slate-700 flex items-center gap-1">Notice Number <span className="text-red-500">*</span></label><input disabled={!canEdit} type="text" value={formData.noticeNumber || ''} onChange={(e) => handleChange('noticeNumber', e.target.value)} className="w-full p-2.5 border border-slate-300 rounded-lg disabled:bg-slate-100" /></div>
-                            <div><label className="block text-sm font-medium text-slate-700 flex items-center gap-1">Notice Type</label><select disabled={!canEdit} className="w-full p-2.5 border border-slate-300 rounded-lg bg-white disabled:bg-slate-100" value={formData.noticeType || ''} onChange={(e) => handleChange('noticeType', e.target.value)}><option value="">Select Type</option>{typeOptions.map((t: string) => <option key={t} value={t}>{t}</option>)}</select></div>
+                            <div><label className="block text-sm font-medium text-slate-700 flex items-center gap-1">Notice Type</label><select disabled={!canEdit} className="w-full p-2.5 border border-slate-300 rounded-lg bg-white disabled:bg-slate-100" value={formData.noticeType || ''} onChange={(e) => handleChange('noticeType', e.target.value)}><option value="">Select Type</option>{finalTypeOptions.map((t: string) => <option key={t} value={t}>{t}</option>)}</select></div>
                              <div className="grid grid-cols-2 gap-4">
                                  <div>
                                      <label className="block text-sm font-medium text-slate-700 flex items-center gap-1">Section</label>
@@ -625,7 +693,7 @@ const NoticeDetail: React.FC = () => {
                                         className="w-full p-2.5 border border-slate-300 rounded-lg bg-white disabled:bg-slate-100"
                                      >
                                         <option value="">Select Period</option>
-                                        {periodOptions.map((p: string) => <option key={p} value={p}>{p}</option>)}
+                                        {finalPeriodOptions.map((p: string) => <option key={p} value={p}>{p}</option>)}
                                      </select>
                                  </div>
                              </div>
@@ -756,23 +824,45 @@ const NoticeDetail: React.FC = () => {
                         </div>
                         <div className="space-y-4">
                             {defects?.map(defect => {
+                                const isWaived = defect.status === 'Waived';
                                 const defectPayments = payments?.filter(p => p.defectId === defect.id);
                                 const totalPaid = defectPayments?.reduce((sum, p) => sum + p.amount, 0) || 0;
                                 const rowSum = (h: TaxHeadValues) => (h?.tax || 0) + (h?.interest || 0) + (h?.penalty || 0) + (h?.lateFee || 0) + (h?.others || 0);
                                 const defectTotal = rowSum(defect.igst) + rowSum(defect.cgst) + rowSum(defect.sgst) + rowSum(defect.cess);
+                                const balance = isWaived ? 0 : defectTotal - totalPaid;
+
                                 return (
-                                    <div key={defect.id} className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm">
-                                        <div className="bg-slate-50 px-4 py-3 border-b border-slate-200 flex justify-between items-start">
-                                            <div><div className="font-semibold text-slate-800 flex items-center gap-2">{defect.defectType} <span className="text-xs bg-slate-200 px-2 py-0.5 rounded text-slate-600">{defect.section}</span></div><p className="text-sm text-slate-500 mt-1">{defect.description}</p></div>
+                                    <div key={defect.id} className={`border rounded-xl overflow-hidden shadow-sm ${isWaived ? 'border-green-200 bg-green-50/10' : 'border-slate-200 bg-white'}`}>
+                                        <div className={`px-4 py-3 border-b flex justify-between items-start ${isWaived ? 'bg-green-50 border-green-200' : 'bg-slate-50 border-slate-200'}`}>
+                                            <div>
+                                                <div className="font-semibold text-slate-800 flex items-center gap-2">
+                                                    {defect.defectType} 
+                                                    <span className="text-xs bg-slate-200 px-2 py-0.5 rounded text-slate-600">{defect.section}</span>
+                                                    {isWaived && <span className="text-xs bg-green-200 text-green-800 px-2 py-0.5 rounded font-bold border border-green-300">WAIVED</span>}
+                                                </div>
+                                                <p className="text-sm text-slate-500 mt-1">{defect.description}</p>
+                                                {isWaived && (
+                                                    <div className="text-xs text-green-700 mt-2 p-2 bg-green-100 rounded border border-green-200">
+                                                        <strong>Waived on {defect.waiverDate}</strong>: {defect.waiverReason}
+                                                    </div>
+                                                )}
+                                            </div>
                                             {canEdit && (
                                                 <div className="flex gap-1">
+                                                    {!isWaived && (
+                                                        <button onClick={() => handleOpenWaiverModal(defect.id!)} className="text-slate-400 hover:text-green-600 p-1" title="Waive Demand (Reply Accepted)">
+                                                            <ShieldCheck size={16}/>
+                                                        </button>
+                                                    )}
                                                     <button onClick={() => handleEditDefect(defect)} className="text-slate-400 hover:text-blue-500 p-1"><Edit size={16}/></button>
                                                     <button onClick={() => handleDeleteDefect(defect.id!)} className="text-slate-400 hover:text-red-500 p-1"><Trash2 size={16} /></button>
                                                 </div>
                                             )}
                                         </div>
-                                        <div className="p-4 overflow-x-auto"><table className="w-full text-sm text-right border-collapse"><thead className="text-xs text-slate-500 bg-slate-50/50 border-b"><tr><th className="py-2 px-2 text-left">Head</th><th className="px-2">Tax</th><th className="px-2">Interest</th><th className="px-2">Penalty</th><th className="px-2">Late Fee</th><th className="px-2">Total</th></tr></thead><tbody className="divide-y divide-slate-100 text-slate-700 text-xs">{['igst', 'cgst', 'sgst', 'cess'].map(h => { const r = (defect as any)[h]; const t = rowSum(r); return t > 0 ? <tr key={h}><td className="py-2 px-2 text-left uppercase">{h}</td><td>{r.tax}</td><td>{r.interest}</td><td>{r.penalty}</td><td>{r.lateFee}</td><td className="font-medium bg-slate-50">{t}</td></tr> : null; })}</tbody><tfoot className="border-t border-slate-200 bg-slate-50 text-slate-900 font-semibold"><tr><td className="py-2 px-2 text-left">Total Demand: {formatCurrency(defectTotal)}</td><td colSpan={5} className="py-2 px-2 text-right">Balance: {formatCurrency(defectTotal - totalPaid)}</td></tr></tfoot></table></div>
-                                        <div className="p-4 bg-slate-50/50 border-t border-slate-200"><div className="flex justify-between items-center mb-2"><h4 className="text-xs font-semibold uppercase text-slate-500">Payments</h4>{canEdit && <button onClick={() => { setSelectedDefectId(defect.id); setShowPaymentModal(true); }} className="text-xs text-blue-600 hover:underline flex items-center gap-1"><Plus size={12}/> Record Payment</button>}</div>{defectPayments?.length ? (<div className="space-y-1">{defectPayments.map(p => <div key={p.id} className="text-xs flex justify-between text-slate-600 border-b border-slate-100 pb-1 items-center"><span>{p.paymentDate} • {p.majorHead} {p.minorHead}</span><div className="flex items-center gap-3"><span className="font-medium">{formatCurrency(p.amount)}</span>{canEdit && <div className="flex gap-1"><button onClick={() => openEditPayment(p)} className="text-slate-400 hover:text-blue-500 p-0.5"><Edit size={12}/></button><button onClick={() => handleDeletePayment(p.id!)} className="text-slate-400 hover:text-red-500 p-0.5"><Trash2 size={12}/></button></div>}</div></div>)}</div>) : <p className="text-xs text-slate-400 italic">No payments.</p>}</div>
+                                        <div className="p-4 overflow-x-auto"><table className="w-full text-sm text-right border-collapse"><thead className="text-xs text-slate-500 bg-slate-50/50 border-b"><tr><th className="py-2 px-2 text-left">Head</th><th className="px-2">Tax</th><th className="px-2">Interest</th><th className="px-2">Penalty</th><th className="px-2">Late Fee</th><th className="px-2">Total</th></tr></thead><tbody className={`divide-y divide-slate-100 text-slate-700 text-xs ${isWaived ? 'line-through opacity-50' : ''}`}>{['igst', 'cgst', 'sgst', 'cess'].map(h => { const r = (defect as any)[h]; const t = rowSum(r); return t > 0 ? <tr key={h}><td className="py-2 px-2 text-left uppercase">{h}</td><td>{r.tax}</td><td>{r.interest}</td><td>{r.penalty}</td><td>{r.lateFee}</td><td className="font-medium bg-slate-50">{t}</td></tr> : null; })}</tbody><tfoot className="border-t border-slate-200 bg-slate-50 text-slate-900 font-semibold"><tr><td className="py-2 px-2 text-left">Total Demand: {formatCurrency(defectTotal)}</td><td colSpan={5} className="py-2 px-2 text-right">Balance: {formatCurrency(balance)}</td></tr></tfoot></table></div>
+                                        {!isWaived && (
+                                            <div className="p-4 bg-slate-50/50 border-t border-slate-200"><div className="flex justify-between items-center mb-2"><h4 className="text-xs font-semibold uppercase text-slate-500">Payments</h4>{canEdit && <button onClick={() => { setSelectedDefectId(defect.id); setShowPaymentModal(true); }} className="text-xs text-blue-600 hover:underline flex items-center gap-1"><Plus size={12}/> Record Payment</button>}</div>{defectPayments?.length ? (<div className="space-y-1">{defectPayments.map(p => <div key={p.id} className="text-xs flex justify-between text-slate-600 border-b border-slate-100 pb-1 items-center"><span>{p.paymentDate} • {p.majorHead} {p.minorHead}</span><div className="flex items-center gap-3"><span className="font-medium">{formatCurrency(p.amount)}</span>{canEdit && <div className="flex gap-1"><button onClick={() => openEditPayment(p)} className="text-slate-400 hover:text-blue-500 p-0.5"><Edit size={12}/></button><button onClick={() => handleDeletePayment(p.id!)} className="text-slate-400 hover:text-red-500 p-0.5"><Trash2 size={12}/></button></div>}</div></div>)}</div>) : <p className="text-xs text-slate-400 italic">No payments.</p>}</div>
+                                        )}
                                     </div>
                                 );
                             })}
@@ -885,7 +975,6 @@ const NoticeDetail: React.FC = () => {
                 </div>
             )}
             
-            {/* Timeline & Audit Tabs (Simplified for brevity as they remain largely same logic-wise, just showing the Documents tab integration mostly) */}
             {activeTab === 'timeline' && (
                 <div className="animate-in fade-in duration-300">
                     <div className="mb-4 flex justify-between items-center"><h3 className="text-lg font-bold text-slate-800">Unified Case Timeline</h3><button onClick={exportHistoryPDF} className="text-xs bg-white border border-slate-300 px-3 py-1.5 rounded flex items-center gap-2 hover:bg-slate-50"><FileDown size={14}/> Export PDF</button></div>
@@ -1100,7 +1189,110 @@ const NoticeDetail: React.FC = () => {
         </div>
       )}
       
-      {showPaymentModal && (<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"><div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl p-6"><h3 className="font-bold text-lg mb-4">Record Payment</h3><form onSubmit={handleSavePaymentMatrix}><div className="mb-4"><label className="text-xs font-bold block">Challan No</label><input required className="w-full border p-2 rounded" value={paymentMatrix.challanNumber} onChange={e => setPaymentMatrix({...paymentMatrix, challanNumber: e.target.value})}/></div><div className="flex justify-end gap-2"><button type="button" onClick={() => setShowPaymentModal(false)} className="px-4 py-2 bg-slate-100 rounded text-sm">Cancel</button><button type="submit" className="px-4 py-2 bg-green-600 text-white rounded text-sm">Save</button></div></form></div></div>)}
+      {/* Waiver Modal */}
+      {showWaiverModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+              <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 animate-in zoom-in-95">
+                  <div className="flex justify-between items-center mb-6">
+                      <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2"><ShieldCheck className="text-green-600"/> Waive Demand</h3>
+                      <button onClick={() => setShowWaiverModal(false)}><X size={20} className="text-slate-400 hover:text-slate-600"/></button>
+                  </div>
+                  <form onSubmit={handleWaiveDefect}>
+                      <div className="mb-4">
+                          <label className="block text-sm font-medium text-slate-700 mb-1">Waiver Date</label>
+                          <input type="date" required value={waiverDetails.date} onChange={e => setWaiverDetails({...waiverDetails, date: e.target.value})} className="w-full p-2.5 border rounded-lg"/>
+                      </div>
+                      <div className="mb-6">
+                          <label className="block text-sm font-medium text-slate-700 mb-1">Reason / Order Details</label>
+                          <textarea required value={waiverDetails.reason} onChange={e => setWaiverDetails({...waiverDetails, reason: e.target.value})} className="w-full p-2.5 border rounded-lg h-24 resize-none" placeholder="e.g. Reply accepted vide Order No..."/>
+                      </div>
+                      <div className="flex justify-end gap-2">
+                          <button type="button" onClick={() => setShowWaiverModal(false)} className="px-4 py-2 bg-slate-100 rounded text-sm">Cancel</button>
+                          <button type="submit" className="px-4 py-2 bg-green-600 text-white rounded text-sm hover:bg-green-700 shadow-sm">Confirm Waiver</button>
+                      </div>
+                  </form>
+              </div>
+          </div>
+      )}
+
+      {showPaymentModal && (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+    <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl p-6 animate-in zoom-in-95 max-h-[90vh] overflow-y-auto">
+      <div className="flex justify-between items-center mb-6">
+        <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
+          <Wallet className="text-green-600" /> Record Payment
+        </h3>
+        <button onClick={() => setShowPaymentModal(false)}>
+          <X size={20} className="text-slate-400 hover:text-slate-600" />
+        </button>
+      </div>
+      <form onSubmit={handleSavePaymentMatrix}>
+        {/* Meta Fields */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 bg-slate-50 p-4 rounded-lg border border-slate-200">
+          <div>
+            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Payment Date</label>
+            <input type="date" required className="w-full p-2 border border-slate-300 rounded text-sm" value={paymentMatrix.paymentDate} onChange={e => setPaymentMatrix({...paymentMatrix, paymentDate: e.target.value})} />
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Challan / CPIN No</label>
+            <input type="text" required className="w-full p-2 border border-slate-300 rounded text-sm" placeholder="CPIN..." value={paymentMatrix.challanNumber} onChange={e => setPaymentMatrix({...paymentMatrix, challanNumber: e.target.value})} />
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Bank Name</label>
+            <input type="text" className="w-full p-2 border border-slate-300 rounded text-sm" placeholder="HDFC, SBI..." value={paymentMatrix.bankName} onChange={e => setPaymentMatrix({...paymentMatrix, bankName: e.target.value})} />
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Ref / CIN</label>
+            <input type="text" className="w-full p-2 border border-slate-300 rounded text-sm" placeholder="Reference #" value={paymentMatrix.refNumber} onChange={e => setPaymentMatrix({...paymentMatrix, refNumber: e.target.value})} />
+          </div>
+        </div>
+
+        {/* Amount Matrix */}
+        <div className="border border-slate-200 rounded-xl overflow-hidden mb-6">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-100 text-slate-600 text-xs uppercase font-bold">
+              <tr>
+                <th className="px-4 py-3 text-left">Head</th>
+                <th className="px-2 py-3 text-right text-blue-700">Tax</th>
+                <th className="px-2 py-3 text-right text-amber-700">Interest</th>
+                <th className="px-2 py-3 text-right text-red-700">Penalty</th>
+                <th className="px-2 py-3 text-right text-purple-700">Late Fee</th>
+                <th className="px-2 py-3 text-right text-slate-700">Others</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {(['igst', 'cgst', 'sgst', 'cess'] as const).map(head => (
+                <tr key={head} className="hover:bg-slate-50">
+                  <td className="px-4 py-2 font-bold text-slate-700 uppercase">{head}</td>
+                  {['tax', 'interest', 'penalty', 'lateFee', 'others'].map((field) => (
+                    <td key={field} className="px-2 py-2">
+                      <input 
+                        type="number" 
+                        min="0"
+                        className="w-full text-right p-2 border border-slate-200 rounded focus:border-blue-500 outline-none focus:ring-1 focus:ring-blue-200 transition-all font-mono"
+                        placeholder="0"
+                        value={(paymentMatrix as any)[head]?.[field] || ''}
+                        onChange={e => handlePaymentMatrixChange(head, field as any, parseFloat(e.target.value) || 0)}
+                        onFocus={e => e.target.select()}
+                      />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
+          <button type="button" onClick={() => setShowPaymentModal(false)} className="px-5 py-2.5 bg-white border border-slate-300 text-slate-700 rounded-lg text-sm font-medium hover:bg-slate-50 transition-colors">Cancel</button>
+          <button type="submit" className="px-5 py-2.5 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 shadow-sm transition-colors flex items-center gap-2">
+            <Save size={16} /> Record Payment
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+)}
 
     </div>
   );
