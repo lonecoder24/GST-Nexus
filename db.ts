@@ -21,10 +21,10 @@ export class GSTDatabase extends Dexie {
   constructor() {
     super('GSTNexusDB');
     
-    // Version 13: Added Invoices table
-    (this as any).version(13).stores({
+    // Version 14: Added caseType to notices
+    (this as any).version(14).stores({
       taxpayers: '++id, &gstin, tradeName',
-      notices: '++id, gstin, noticeNumber, arn, noticeType, status, dueDate, riskLevel, assignedTo, hearingDate, lastCheckedDate',
+      notices: '++id, gstin, noticeNumber, arn, noticeType, caseType, status, dueDate, riskLevel, assignedTo, hearingDate, lastCheckedDate',
       payments: '++id, noticeId, defectId, challanNumber, paymentDate, majorHead',
       auditLogs: '++id, entityId, timestamp, entityType',
       timeSheets: '++id, noticeId, teamMember, date',
@@ -56,16 +56,6 @@ export const seedDatabase = async () => {
       email: 'admin@gstnexus.com',
       isActive: true
     });
-    
-    // Default User
-    await db.users.add({
-        username: 'rahul_ca',
-        passwordHash: 'user123',
-        fullName: 'Rahul Associate',
-        role: UserRole.ASSOCIATE,
-        email: 'rahul@gstnexus.com',
-        isActive: true
-    });
   }
 
   // Seed App Config
@@ -73,7 +63,20 @@ export const seedDatabase = async () => {
   if (configCount === 0) {
       await db.appConfig.add({
           key: 'notice_types',
-          value: ['ASMT-10', 'DRC-01', 'DRC-07', 'SCN', 'Summons', 'Final Audit Report', 'Appeal Order']
+          value: ['ASMT-10', 'DRC-01', 'DRC-07', 'SCN', 'Summons', 'Final Audit Report', 'Appeal Order', 'Rectification Order']
+      });
+      // New Case Tracks
+      await db.appConfig.add({
+          key: 'case_types',
+          value: [
+              'Assessment Proceedings (ASMT)',
+              'Demand & Recovery (DRC)',
+              'Rectification',
+              'Appeal',
+              'Refund',
+              'Investigation / Summons',
+              'General'
+          ]
       });
       await db.appConfig.add({
           key: 'notice_statuses',
@@ -84,7 +87,18 @@ export const seedDatabase = async () => {
               NoticeStatus.FILED, 
               NoticeStatus.HEARING, 
               NoticeStatus.CLOSED, 
-              NoticeStatus.APPEAL
+              NoticeStatus.APPEAL,
+              'Order Passed'
+          ]
+      });
+      // New: Configure which statuses stop the overdue timer
+      await db.appConfig.add({
+          key: 'overdue_excluded_statuses',
+          value: [
+              NoticeStatus.CLOSED,
+              NoticeStatus.FILED,
+              NoticeStatus.APPEAL,
+              'Order Passed'
           ]
       });
       await db.appConfig.add({
@@ -142,168 +156,6 @@ export const seedDatabase = async () => {
           });
       }
   }
-
-  const count = await db.taxpayers.count();
-  if (count === 0) {
-    // 1. Acme Traders
-    await db.taxpayers.add({
-      gstin: '27ABCDE1234F1Z5',
-      tradeName: 'Acme Traders Pvt Ltd',
-      legalName: 'Acme Traders',
-      mobile: '9876543210',
-      email: 'accounts@acme.com',
-      registeredAddress: '123 Market Road, Mumbai',
-      stateCode: '27',
-      jurisdictionalAuthority: 'State Tax Officer',
-      stateCircle: 'MUM-ZONE-II',
-      centralRange: 'Range-1 Div-3'
-    });
-
-    const noticeId1 = await db.notices.add({
-      gstin: '27ABCDE1234F1Z5',
-      arn: 'AD2704230001234',
-      noticeNumber: 'DIN2023101055',
-      noticeType: 'ASMT-10',
-      section: 'Section 61',
-      period: 'FY 2021-22',
-      dateOfIssue: new Date().toISOString().split('T')[0],
-      dueDate: new Date(Date.now() + 86400000 * 3).toISOString().split('T')[0], // 3 days from now
-      receivedDate: new Date().toISOString().split('T')[0],
-      issuingAuthority: 'Sup. Range 5',
-      demandAmount: 540000,
-      riskLevel: RiskLevel.HIGH,
-      status: NoticeStatus.RECEIVED,
-      description: 'Discrepancy in GSTR-1 vs GSTR-3B',
-      assignedTo: 'rahul_ca',
-      tags: ['ITC Mismatch'],
-      lastCheckedDate: new Date().toISOString().split('T')[0]
-    });
-
-    await db.defects.add({
-        noticeId: noticeId1,
-        defectType: 'ITC Mismatch',
-        section: 'Section 16(2)(c)',
-        description: 'Mismatch between GSTR-3B and GSTR-2A',
-        taxDemand: 500000,
-        interestDemand: 40000,
-        penaltyDemand: 0,
-        igst: { tax: 250000, interest: 20000, penalty: 0, lateFee: 0, others: 0 },
-        cgst: { tax: 125000, interest: 10000, penalty: 0, lateFee: 0, others: 0 },
-        sgst: { tax: 125000, interest: 10000, penalty: 0, lateFee: 0, others: 0 },
-        cess: { tax: 0, interest: 0, penalty: 0, lateFee: 0, others: 0 }
-    });
-
-    // 2. Zenith Logistics
-    await db.taxpayers.add({
-      gstin: '27XYZAB9876C1Z1',
-      tradeName: 'Zenith Logistics',
-      legalName: 'Zenith Logistics LLP',
-      mobile: '8888888888',
-      email: 'tax@zenith.com',
-      registeredAddress: '45 Industrial Area, Pune',
-      stateCode: '27',
-      jurisdictionalAuthority: 'Superintendent',
-      stateCircle: 'PUN-ZONE-I',
-      centralRange: 'Range-5 Div-1'
-    });
-
-    const noticeId2 = await db.notices.add({
-      gstin: '27XYZAB9876C1Z1',
-      arn: 'AD2705230005678',
-      noticeNumber: 'SCN-2023-001',
-      noticeType: 'SCN',
-      section: 'Section 73',
-      period: 'FY 2019-20',
-      dateOfIssue: '2023-05-15',
-      dueDate: '2023-06-15',
-      receivedDate: '2023-05-20',
-      issuingAuthority: 'AC State Tax',
-      demandAmount: 150000,
-      riskLevel: RiskLevel.MEDIUM,
-      status: NoticeStatus.DRAFTING,
-      description: 'Short payment of tax',
-      assignedTo: 'admin',
-      tags: ['Short Payment']
-    });
-
-    await db.defects.add({
-        noticeId: noticeId2,
-        defectType: 'Short Payment',
-        section: 'Section 73',
-        description: 'Difference in liability declared in 3B vs 1',
-        taxDemand: 100000,
-        interestDemand: 50000,
-        penaltyDemand: 0,
-        igst: { tax: 100000, interest: 50000, penalty: 0, lateFee: 0, others: 0 },
-        cgst: { tax: 0, interest: 0, penalty: 0, lateFee: 0, others: 0 },
-        sgst: { tax: 0, interest: 0, penalty: 0, lateFee: 0, others: 0 },
-        cess: { tax: 0, interest: 0, penalty: 0, lateFee: 0, others: 0 }
-    });
-
-    // Hearing for Notice 2
-    await db.hearings.add({
-        noticeId: noticeId2,
-        date: new Date(Date.now() + 86400000 * 5).toISOString().split('T')[0],
-        time: '14:30',
-        venue: 'Room 202, GST Bhavan',
-        type: 'Personal Hearing',
-        status: 'Scheduled',
-        minutes: 'Preparation ongoing'
-    } as any);
-
-    // 3. Closed Case
-    const noticeId3 = await db.notices.add({
-        gstin: '27ABCDE1234F1Z5',
-        arn: 'AD2701230009999',
-        noticeNumber: 'DRC-01-OLD',
-        noticeType: 'DRC-01',
-        section: 'Section 74',
-        period: 'FY 2018-19',
-        dateOfIssue: '2022-01-10',
-        dueDate: '2022-02-10',
-        receivedDate: '2022-01-15',
-        issuingAuthority: 'Sup. Audit',
-        demandAmount: 25000,
-        riskLevel: RiskLevel.LOW,
-        status: NoticeStatus.CLOSED,
-        description: 'Late fees not paid',
-        assignedTo: 'admin',
-        tags: ['Late Fee']
-    });
-
-    await db.payments.add({
-        noticeId: noticeId3,
-        amount: 25000,
-        paymentDate: '2022-02-01',
-        challanNumber: 'CPIN123456789',
-        majorHead: 'CGST',
-        minorHead: 'Late Fee',
-        bankName: 'HDFC Bank'
-    });
-
-    // Seed Return Data
-    await db.returns.add({
-        gstin: '27ABCDE1234F1Z5',
-        returnType: 'GSTR-3B',
-        period: 'April-2023',
-        financialYear: '2023-24',
-        filingDate: '2023-05-20',
-        taxableValue: 500000,
-        taxLiability: 90000,
-        itcAvailable: 85000,
-        cashPaid: 5000,
-        status: 'Filed'
-    });
-
-    await db.auditLogs.add({
-        entityType: 'System',
-        entityId: 'INIT',
-        action: 'Create',
-        timestamp: new Date().toISOString(),
-        user: 'System',
-        details: 'Database seeded with enhanced sample data'
-    });
-  }
 };
 
 // Automated Notification Generator
@@ -315,12 +167,16 @@ export const checkAndGenerateNotifications = async () => {
         const config = await db.appConfig.get({ key: 'notification_reminder_days' });
         const reminderDays = config && config.value ? Number(config.value) : 3;
 
+        // Fetch configured resolved statuses (statuses that STOP overdue counter)
+        const statusConfig = await db.appConfig.get({ key: 'overdue_excluded_statuses' });
+        const resolvedStatuses = statusConfig ? statusConfig.value : [NoticeStatus.CLOSED, NoticeStatus.FILED, NoticeStatus.APPEAL, 'Order Passed'];
+
         const targetDate = new Date();
         targetDate.setDate(today.getDate() + reminderDays);
 
+        // Get only active notices (status is NOT in resolved list)
         const activeNotices = await db.notices
-            .where('status')
-            .notEqual(NoticeStatus.CLOSED)
+            .filter(n => !resolvedStatuses.includes(n.status as any))
             .toArray();
 
         for (const notice of activeNotices) {

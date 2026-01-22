@@ -1,7 +1,24 @@
 
 const { app, BrowserWindow, screen } = require('electron');
 const path = require('path');
-const isDev = require('electron-is-dev');
+const fs = require('fs');
+
+// Replace external dependency with native Electron API to avoid ESM/CommonJS conflicts
+const isDev = !app.isPackaged;
+
+// PORTABLE MODE CONFIGURATION
+// If running in production (packaged), set the data path to be inside a 'Data' folder 
+// next to the executable. This ensures data stays on the USB drive.
+if (!isDev) {
+  const exePath = path.dirname(process.execPath);
+  const dataPath = path.join(exePath, 'GSTNexus_Data');
+
+  if (!fs.existsSync(dataPath)) {
+    fs.mkdirSync(dataPath);
+  }
+  
+  app.setPath('userData', dataPath);
+}
 
 function createWindow() {
   const { width, height } = screen.getPrimaryDisplay().workAreaSize;

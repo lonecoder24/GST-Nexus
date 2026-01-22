@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
 import { UserRole, ALL_PERMISSIONS, PermissionType, User } from '../types';
-import { Trash2, UserPlus, Save, Shield, Settings, Plus, X, AlertOctagon, Users, Calculator, Calendar, ToggleLeft, ToggleRight, Info, CheckCircle, Lock, Edit2, Database, Download, Upload, Globe, Key, Wifi, MapPin, List, Bell } from 'lucide-react';
+import { Trash2, UserPlus, Save, Shield, Settings, Plus, X, AlertOctagon, Users, Calculator, Calendar, ToggleLeft, ToggleRight, Info, CheckCircle, Lock, Edit2, Database, Download, Upload, Globe, Key, Wifi, MapPin, List, Bell, ChevronRight, LayoutList, CheckSquare, Split } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 const AdminSettings: React.FC = () => {
@@ -20,6 +20,7 @@ const AdminSettings: React.FC = () => {
   
   // Config State
   const [newConfigInput, setNewConfigInput] = useState<Record<string, string>>({});
+  const [selectedConfigKey, setSelectedConfigKey] = useState('notice_types');
   const [reminderDays, setReminderDays] = useState(3);
 
   // Password Reset State
@@ -177,6 +178,25 @@ const AdminSettings: React.FC = () => {
       });
   };
 
+  const handleToggleOverdueStatus = async (status: string) => {
+      const key = 'overdue_excluded_statuses';
+      const currentConfig = configItems?.find(c => c.key === key);
+      const currentValues = currentConfig?.value || [];
+      
+      let newValues;
+      if (currentValues.includes(status)) {
+          newValues = currentValues.filter((s: string) => s !== status);
+      } else {
+          newValues = [...currentValues, status];
+      }
+
+      if (currentConfig) {
+          await db.appConfig.update(currentConfig.id!, { value: newValues });
+      } else {
+          await db.appConfig.add({ key, value: newValues });
+      }
+  };
+
   const handleSaveNotificationSettings = async (e: React.FormEvent) => {
       e.preventDefault();
       try {
@@ -198,6 +218,7 @@ const AdminSettings: React.FC = () => {
   };
 
   const handleBulkInterestUpdate = async () => {
+    // ... (Keep existing bulk update logic)
     const confirmation = confirm(`This will recalculate interest for ALL open notices (Status ≠ Closed).
     \nParameters:
     - Interest Rate: ${interestRate}%
@@ -278,7 +299,7 @@ const AdminSettings: React.FC = () => {
     }
   };
 
-  const handleBackup = async () => {
+  const handleBackup = async () => { /* ... Keep existing logic ... */
       try {
           const exportData: Record<string, any[]> = {};
           // Cast to any to access tables property dynamically which is present in Dexie instance
@@ -300,7 +321,7 @@ const AdminSettings: React.FC = () => {
       }
   };
 
-  const handleRestore = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleRestore = async (e: React.ChangeEvent<HTMLInputElement>) => { /* ... Keep existing logic ... */
       const file = e.target.files?.[0];
       if (!file) return;
 
@@ -337,7 +358,7 @@ const AdminSettings: React.FC = () => {
       reader.readAsText(file);
   };
 
-  const handleSaveApiConfig = async (e: React.FormEvent) => {
+  const handleSaveApiConfig = async (e: React.FormEvent) => { /* ... Keep existing logic ... */
       e.preventDefault();
       try {
           const existing = await db.appConfig.get({ key: 'api_config' });
@@ -361,7 +382,7 @@ const AdminSettings: React.FC = () => {
       return configItems?.find(c => c.key === `perm:${role}`)?.value || [];
   };
 
-  const togglePermission = async (role: string, permission: string) => {
+  const togglePermission = async (role: string, permission: string) => { /* ... Keep existing logic ... */
       const key = `perm:${role}`;
       const config = await db.appConfig.where('key').equals(key).first();
       
@@ -380,6 +401,18 @@ const AdminSettings: React.FC = () => {
   };
 
   const availableRoles = getConfig('user_roles').length > 0 ? getConfig('user_roles') : Object.values(UserRole);
+
+  const configSections = [
+      { key: 'case_types', label: 'Case Tracks', icon: Split, placeholder: 'e.g. Assessment, Demand, Rectification', description: 'Broad categories to separate workflows (Track splitting).' },
+      { key: 'notice_types', label: 'Notice Types', icon: List, placeholder: 'e.g. SCN, ASMT-10, DRC-01', description: 'Specific types of notices/forms.' },
+      { key: 'notice_periods', label: 'Financial Periods', icon: Calendar, placeholder: 'e.g. FY 2023-24', description: 'Fiscal years used for tagging notices.' },
+      { key: 'notice_statuses', label: 'Workflow Statuses', icon: CheckCircle, placeholder: 'e.g. Pending Review, Order Passed', description: 'Stages in the compliance workflow.' },
+      { key: 'overdue_excluded_statuses', label: 'Overdue Logic', icon: CheckSquare, placeholder: '', description: 'Select statuses that mark a case as "Resolved" to stop overdue alerts.' },
+      { key: 'defect_types', label: 'Defect Types', icon: AlertOctagon, placeholder: 'e.g. ITC Mismatch, E-Way Bill', description: 'Common issues identified in notices.' },
+      { key: 'user_roles', label: 'User Roles', icon: Users, placeholder: 'e.g. Manager, Partner', description: 'Roles assignable to users for permission control.' }
+  ];
+
+  const currentSection = configSections.find(s => s.key === selectedConfigKey) || configSections[0];
 
   return (
     <div className="max-w-5xl mx-auto space-y-6 pb-10">
@@ -406,68 +439,110 @@ const AdminSettings: React.FC = () => {
             ))}
          </div>
 
-         <div className="p-8">
-             {/* CONFIGURATION TAB */}
+         <div className="p-0">
+             {/* CONFIGURATION TAB - REDESIGNED */}
              {activeTab === 'config' && (
-                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in">
-                     <div className="md:col-span-2 bg-blue-50 p-4 rounded-xl border border-blue-100 flex items-start gap-3">
-                         <Info className="text-blue-600 shrink-0 mt-0.5" size={18}/>
-                         <div>
-                             <p className="text-sm font-bold text-blue-800">System Parameters</p>
-                             <p className="text-xs text-blue-700 mt-1">
-                                 Values configured here populate dropdowns across the application (e.g. creating new notices, assigning defects, filtering reports).
-                             </p>
-                         </div>
+                 <div className="flex flex-col md:flex-row h-[600px]">
+                     {/* Sidebar */}
+                     <div className="w-full md:w-64 border-r border-slate-200 bg-slate-50 p-2 overflow-y-auto">
+                         <div className="px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Parameters</div>
+                         {configSections.map(section => (
+                             <button
+                                 key={section.key}
+                                 onClick={() => setSelectedConfigKey(section.key)}
+                                 className={`w-full text-left px-4 py-3 rounded-lg text-sm font-medium flex items-center gap-3 transition-colors mb-1 ${
+                                     selectedConfigKey === section.key 
+                                     ? 'bg-white text-blue-600 shadow-sm border border-slate-200' 
+                                     : 'text-slate-600 hover:bg-slate-200/50'
+                                 }`}
+                             >
+                                 <section.icon size={16} className={selectedConfigKey === section.key ? 'text-blue-500' : 'text-slate-400'}/>
+                                 {section.label}
+                             </button>
+                         ))}
                      </div>
 
-                     {[
-                         { key: 'notice_types', label: 'Notice Types', icon: List, placeholder: 'e.g. SCN, ASMT-10, DRC-01' },
-                         { key: 'notice_periods', label: 'Financial Periods', icon: Calendar, placeholder: 'e.g. FY 2023-24' },
-                         { key: 'notice_statuses', label: 'Workflow Statuses', icon: CheckCircle, placeholder: 'e.g. Pending Review, Order Passed' },
-                         { key: 'defect_types', label: 'Defect Types', icon: AlertOctagon, placeholder: 'e.g. ITC Mismatch, E-Way Bill' },
-                         { key: 'user_roles', label: 'User Roles', icon: Users, placeholder: 'e.g. Manager, Partner' }
-                     ].map(section => (
-                         <div key={section.key} className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
-                             <h4 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
-                                 <section.icon size={18} className="text-slate-400"/> {section.label}
-                             </h4>
-                             <div className="flex gap-2 mb-4">
-                                 <input 
-                                     type="text" 
-                                     className="flex-1 p-2 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500"
-                                     placeholder={section.placeholder}
-                                     value={newConfigInput[section.key] || ''}
-                                     onChange={e => setNewConfigInput({...newConfigInput, [section.key]: e.target.value})}
-                                     onKeyDown={e => e.key === 'Enter' && handleAddConfigItem(section.key)}
-                                 />
-                                 <button 
-                                     onClick={() => handleAddConfigItem(section.key)}
-                                     className="bg-blue-600 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
-                                 >
-                                     Add
-                                 </button>
+                     {/* Main Content Area */}
+                     <div className="flex-1 p-8 bg-white overflow-y-auto">
+                         <div className="max-w-2xl">
+                             <div className="mb-6">
+                                 <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                                     {currentSection.label}
+                                 </h3>
+                                 <p className="text-slate-500 text-sm mt-1">{currentSection.description}</p>
                              </div>
-                             <div className="flex flex-wrap gap-2 min-h-[60px] content-start">
-                                 {getConfig(section.key).map((item: string) => (
-                                     <span key={item} className="bg-slate-100 text-slate-700 text-xs px-2.5 py-1.5 rounded-full border border-slate-200 flex items-center gap-1 group transition-colors hover:bg-slate-200">
-                                         {item}
+
+                             {currentSection.key === 'overdue_excluded_statuses' ? (
+                                 <div className="bg-slate-50 rounded-xl border border-slate-200 p-4">
+                                     <p className="text-sm font-medium mb-4 text-slate-700">Select statuses that represent a "Resolved" case:</p>
+                                     <div className="space-y-2">
+                                         {getConfig('notice_statuses').map((status: string) => {
+                                             const isChecked = getConfig('overdue_excluded_statuses').includes(status);
+                                             return (
+                                                 <label key={status} className="flex items-center gap-3 p-2 hover:bg-white rounded cursor-pointer transition-colors border border-transparent hover:border-slate-200">
+                                                     <input 
+                                                        type="checkbox" 
+                                                        checked={isChecked} 
+                                                        onChange={() => handleToggleOverdueStatus(status)}
+                                                        className="w-5 h-5 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
+                                                     />
+                                                     <span className={`text-sm ${isChecked ? 'text-slate-900 font-medium' : 'text-slate-500'}`}>{status}</span>
+                                                 </label>
+                                             )
+                                         })}
+                                     </div>
+                                 </div>
+                             ) : (
+                                 <>
+                                     <div className="flex gap-2 mb-6">
+                                         <input 
+                                             type="text" 
+                                             className="flex-1 p-3 border border-slate-300 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500 shadow-sm"
+                                             placeholder={currentSection.placeholder}
+                                             value={newConfigInput[currentSection.key] || ''}
+                                             onChange={e => setNewConfigInput({...newConfigInput, [currentSection.key]: e.target.value})}
+                                             onKeyDown={e => e.key === 'Enter' && handleAddConfigItem(currentSection.key)}
+                                         />
                                          <button 
-                                            onClick={() => handleRemoveConfigItem(section.key, item)} 
-                                            className="text-slate-400 hover:text-red-500 rounded-full p-0.5 hover:bg-red-50"
+                                             onClick={() => handleAddConfigItem(currentSection.key)}
+                                             className="bg-blue-600 text-white px-5 py-2 rounded-xl text-sm font-medium hover:bg-blue-700 transition-colors shadow-sm flex items-center gap-2"
                                          >
-                                             <X size={12}/>
+                                             <Plus size={18}/> Add
                                          </button>
-                                     </span>
-                                 ))}
-                                 {getConfig(section.key).length === 0 && <span className="text-xs text-slate-400 italic">No items configured</span>}
-                             </div>
+                                     </div>
+
+                                     <div className="bg-slate-50 rounded-xl border border-slate-200 overflow-hidden">
+                                         {getConfig(currentSection.key).length > 0 ? (
+                                             <div className="divide-y divide-slate-200">
+                                                 {getConfig(currentSection.key).map((item: string) => (
+                                                     <div key={item} className="px-4 py-3 flex justify-between items-center group hover:bg-white transition-colors">
+                                                         <span className="text-sm text-slate-700 font-medium">{item}</span>
+                                                         <button 
+                                                            onClick={() => handleRemoveConfigItem(currentSection.key, item)} 
+                                                            className="text-slate-400 hover:text-red-500 p-1.5 rounded-lg hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all"
+                                                            title="Remove"
+                                                         >
+                                                             <Trash2 size={14}/>
+                                                         </button>
+                                                     </div>
+                                                 ))}
+                                             </div>
+                                         ) : (
+                                             <div className="p-8 text-center text-slate-400 text-sm italic">
+                                                 No items configured yet. Add one above.
+                                             </div>
+                                         )}
+                                     </div>
+                                 </>
+                             )}
                          </div>
-                     ))}
+                     </div>
                  </div>
              )}
 
+             {/* ... (Keep existing User, Notification, API, Maintenance tabs as is) ... */}
              {activeTab === 'users' && (
-                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-in fade-in slide-in-from-left-4">
+                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 p-8 animate-in fade-in slide-in-from-left-4">
                      {/* Add User */}
                      <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200 h-fit">
                          <h3 className="font-bold text-slate-800 mb-6 flex items-center gap-2">
@@ -569,7 +644,7 @@ const AdminSettings: React.FC = () => {
              )}
 
              {activeTab === 'notifications' && (
-                 <div className="max-w-2xl mx-auto animate-in fade-in zoom-in-95">
+                 <div className="max-w-2xl mx-auto animate-in fade-in zoom-in-95 p-8">
                      <div className="bg-white border border-slate-200 rounded-2xl p-8 shadow-sm">
                          <div className="flex items-start gap-4 mb-6">
                              <div className="p-3 bg-amber-100 text-amber-600 rounded-xl"><Bell size={28}/></div>
@@ -607,8 +682,9 @@ const AdminSettings: React.FC = () => {
                  </div>
              )}
 
+             {/* ... (Rest of Tabs: api, maintenance, data - unmodified) ... */}
              {activeTab === 'api' && (
-                 <div className="max-w-2xl mx-auto animate-in fade-in zoom-in-95">
+                 <div className="max-w-2xl mx-auto animate-in fade-in zoom-in-95 p-8">
                      <div className="bg-white border border-slate-200 rounded-2xl p-8 shadow-sm">
                          <div className="flex items-start gap-4 mb-6">
                              <div className="p-3 bg-indigo-100 text-indigo-600 rounded-xl"><Globe size={28}/></div>
@@ -652,7 +728,7 @@ const AdminSettings: React.FC = () => {
 
              {/* Maintenance Tab */}
              {activeTab === 'maintenance' && (
-                 <div className="max-w-2xl mx-auto space-y-8 animate-in fade-in zoom-in-95">
+                 <div className="max-w-2xl mx-auto space-y-8 animate-in fade-in zoom-in-95 p-8">
                      <div className="bg-gradient-to-br from-white to-slate-50 border border-slate-200 rounded-2xl p-8 shadow-sm">
                          <div className="flex items-start gap-4 mb-6">
                              <div className="p-3 bg-blue-100 text-blue-600 rounded-xl"><Calculator size={28}/></div>
@@ -715,7 +791,7 @@ const AdminSettings: React.FC = () => {
              )}
 
              {activeTab === 'data' && (
-                 <div className="max-w-3xl mx-auto space-y-8 animate-in fade-in slide-in-from-right-4">
+                 <div className="max-w-3xl mx-auto space-y-8 animate-in fade-in slide-in-from-right-4 p-8">
                      <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200">
                          <div className="flex items-center gap-4 mb-6">
                              <div className="p-3 bg-indigo-50 text-indigo-600 rounded-xl"><Database size={28}/></div>
@@ -749,7 +825,7 @@ const AdminSettings: React.FC = () => {
          </div>
       </div>
 
-      {/* Password Reset Modal */}
+      {/* Password Reset Modal (Same as before) */}
       {showPasswordModal && selectedUserForReset && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
               <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 animate-in zoom-in-95">

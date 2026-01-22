@@ -7,6 +7,7 @@ import { Upload, FileText, BarChart2, Calendar, AlertCircle, CheckCircle, Search
 import * as XLSX from 'xlsx';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 import { useAuth } from '../contexts/AuthContext';
+import { formatDate, parseExcelDate, formatCurrency } from '../utils/formatting';
 
 const Returns: React.FC = () => {
   const { user } = useAuth();
@@ -35,7 +36,7 @@ const Returns: React.FC = () => {
     (!filterYear || r.financialYear === filterYear)
   ).sort((a,b) => new Date(b.filingDate).getTime() - new Date(a.filingDate).getTime());
 
-  // Analysis Data Preparation
+  // Analysis Data
   const analysisData = React.useMemo(() => {
       const months = ['April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December', 'January', 'February', 'March'];
       return months.map(month => {
@@ -54,7 +55,6 @@ const Returns: React.FC = () => {
       });
   }, [filteredReturns]);
 
-  // Fetch IP when modal opens
   useEffect(() => {
       if (showFetchModal) {
           fetch('https://api.ipify.org?format=json')
@@ -84,7 +84,7 @@ const Returns: React.FC = () => {
                           returnType: row.returnType,
                           period: row.period,
                           financialYear: row.financialYear || '2023-24',
-                          filingDate: row.filingDate || new Date().toISOString().split('T')[0],
+                          filingDate: parseExcelDate(row.filingDate), // Use Util
                           arn: row.arn,
                           taxableValue: parseFloat(row.taxableValue) || 0,
                           taxLiability: parseFloat(row.taxLiability) || 0,
@@ -114,7 +114,7 @@ const Returns: React.FC = () => {
   const downloadTemplate = () => {
       const data = [{
           gstin: "27ABCDE1234F1Z5", returnType: "GSTR-3B", period: "April-2023", financialYear: "2023-24",
-          filingDate: "2023-05-20", arn: "AA2705230001234", taxableValue: 100000, taxLiability: 18000, itcAvailable: 12000, cashPaid: 6000
+          filingDate: "20-May-2023", arn: "AA2705230001234", taxableValue: 100000, taxLiability: 18000, itcAvailable: 12000, cashPaid: 6000
       }];
       const wb = XLSX.utils.book_new();
       const ws = XLSX.utils.json_to_sheet(data);
@@ -127,8 +127,6 @@ const Returns: React.FC = () => {
           await db.returns.delete(id);
       }
   };
-
-  const formatCurrency = (val: number) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(val);
 
   // New Fetch Logic
   const handleOpenFetchModal = () => {
@@ -156,7 +154,7 @@ const Returns: React.FC = () => {
           // Generate a fake TXN ID
           const txnId = `TXN-${Math.floor(Math.random() * 1000000)}`;
           
-          // Log the attempt as if it were a real API call
+          // Log the attempt
           await db.auditLogs.add({
               entityType: 'System', 
               entityId: 'API_FETCH', 
@@ -175,7 +173,6 @@ const Returns: React.FC = () => {
               })
           });
 
-          // Mock adding a record to show functionality
           await db.returns.add({
               gstin: fetchParams.gstin,
               returnType: 'GSTR-1',
@@ -223,14 +220,14 @@ const Returns: React.FC = () => {
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row gap-4 items-center">
             <div className="flex-1 w-full">
                 <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Select Taxpayer</label>
-                <select className="w-full p-2 border rounded text-sm bg-slate-50" value={selectedGstin} onChange={e => setSelectedGstin(e.target.value)}>
+                <select className="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:ring-2 focus:ring-blue-500 outline-none" value={selectedGstin} onChange={e => setSelectedGstin(e.target.value)}>
                     <option value="">All Taxpayers</option>
                     {taxpayers.map(t => <option key={t.id} value={t.gstin}>{t.tradeName} ({t.gstin})</option>)}
                 </select>
             </div>
             <div className="w-full md:w-48">
                 <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Financial Year</label>
-                <select className="w-full p-2 border rounded text-sm bg-slate-50" value={filterYear} onChange={e => setFilterYear(e.target.value)}>
+                <select className="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:ring-2 focus:ring-blue-500 outline-none" value={filterYear} onChange={e => setFilterYear(e.target.value)}>
                     <option>2024-25</option>
                     <option>2023-24</option>
                     <option>2022-23</option>
@@ -251,7 +248,7 @@ const Returns: React.FC = () => {
                     </div>
                     
                     <div className="space-y-3">
-                        <button onClick={downloadTemplate} className="text-sm text-blue-600 hover:underline flex items-center justify-center gap-1">
+                        <button onClick={downloadTemplate} className="text-sm text-blue-600 hover:underline flex items-center justify-center gap-1 font-medium">
                             <Download size={14}/> Download Excel Template
                         </button>
                         
@@ -259,7 +256,7 @@ const Returns: React.FC = () => {
                             className="border-2 border-dashed border-slate-300 rounded-xl p-8 hover:bg-slate-50 transition-colors cursor-pointer"
                             onClick={() => fileInputRef.current?.click()}
                         >
-                            <p className="text-sm font-medium text-slate-600">Click to Select File (.xlsx)</p>
+                            <p className="text-sm font-bold text-slate-600">Click to Select File (.xlsx)</p>
                             <input type="file" ref={fileInputRef} className="hidden" accept=".xlsx, .xls" onChange={handleFileUpload} />
                         </div>
                     </div>
@@ -284,7 +281,7 @@ const Returns: React.FC = () => {
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                         {filteredReturns.map(r => (
-                            <tr key={r.id} className="hover:bg-slate-50">
+                            <tr key={r.id} className="hover:bg-slate-50 transition-colors">
                                 <td className="px-6 py-4 font-medium text-slate-800">{r.gstin}</td>
                                 <td className="px-6 py-4 text-slate-600">{r.period}</td>
                                 <td className="px-6 py-4">
@@ -315,6 +312,7 @@ const Returns: React.FC = () => {
             </div>
         )}
 
+        {/* ... (Analysis Tab - minor formatting) ... */}
         {activeTab === 'analysis' && (
             <div className="space-y-6 animate-in fade-in">
                 {selectedGstin ? (
@@ -365,7 +363,7 @@ const Returns: React.FC = () => {
 
         {/* Fetch Online Modal */}
         {showFetchModal && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
                 <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg p-6 animate-in zoom-in-95">
                     <div className="flex justify-between items-center mb-6">
                         <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
@@ -373,7 +371,7 @@ const Returns: React.FC = () => {
                         </h3>
                         <button onClick={() => setShowFetchModal(false)}><X size={20} className="text-slate-400 hover:text-slate-600"/></button>
                     </div>
-                    
+                    {/* ... (Form Content - Logic same, slight visual tweaks) ... */}
                     <form onSubmit={handleExecuteFetch} className="space-y-5">
                         <div className="p-4 bg-purple-50 rounded-lg border border-purple-100 text-sm text-purple-800 mb-4">
                             <p className="font-semibold mb-1">API Parameters</p>
@@ -384,7 +382,7 @@ const Returns: React.FC = () => {
                             <label className="block text-sm font-bold text-slate-700 mb-1">GSTIN <span className="text-red-500">*</span></label>
                             <select 
                                 required
-                                className="w-full p-2.5 border border-slate-300 rounded-lg text-sm bg-white"
+                                className="w-full p-2.5 border border-slate-300 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-purple-500"
                                 value={fetchParams.gstin} 
                                 onChange={e => {
                                     const val = e.target.value;
@@ -405,9 +403,8 @@ const Returns: React.FC = () => {
                                     required 
                                     value={fetchParams.date} 
                                     onChange={e => setFetchParams({...fetchParams, date: e.target.value})} 
-                                    className="w-full p-2.5 border border-slate-300 rounded-lg text-sm"
+                                    className="w-full p-2.5 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-purple-500"
                                 />
-                                <span className="text-[10px] text-slate-400 mt-1 block">Format: DD/MM/YYYY (Internal)</span>
                             </div>
                             <div>
                                 <label className="block text-sm font-bold text-slate-700 mb-1">Email <span className="text-red-500">*</span></label>
@@ -417,7 +414,7 @@ const Returns: React.FC = () => {
                                     placeholder="Registered Email"
                                     value={fetchParams.email} 
                                     onChange={e => setFetchParams({...fetchParams, email: e.target.value})} 
-                                    className="w-full p-2.5 border border-slate-300 rounded-lg text-sm"
+                                    className="w-full p-2.5 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-purple-500"
                                 />
                             </div>
                         </div>
@@ -430,13 +427,13 @@ const Returns: React.FC = () => {
                                 placeholder="Portal Username"
                                 value={fetchParams.gstUsername} 
                                 onChange={e => setFetchParams({...fetchParams, gstUsername: e.target.value})} 
-                                className="w-full p-2.5 border border-slate-300 rounded-lg text-sm"
+                                className="w-full p-2.5 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-purple-500"
                             />
                         </div>
 
                         <div className="grid grid-cols-2 gap-4">
                             <div>
-                                <label className="block text-sm font-bold text-slate-700 mb-1">State Code (Auto)</label>
+                                <label className="block text-sm font-bold text-slate-700 mb-1">State Code</label>
                                 <input 
                                     type="text" 
                                     readOnly 
@@ -445,7 +442,7 @@ const Returns: React.FC = () => {
                                 />
                             </div>
                             <div>
-                                <label className="block text-sm font-bold text-slate-700 mb-1">IP Address (Auto)</label>
+                                <label className="block text-sm font-bold text-slate-700 mb-1">IP Address</label>
                                 <input 
                                     type="text" 
                                     readOnly 

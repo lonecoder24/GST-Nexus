@@ -5,10 +5,7 @@
   "description": "GST Nexus - Offline Notice Manager",
   "main": "dist/electron.js",
   "homepage": "./",
-  "author": {
-    "name": "GST Nexus Team",
-    "email": "support@gstnexus.com"
-  },
+  "author": "GST Nexus Team <support@gstnexus.com>",
   "scripts": {
     "start": "vite",
     "build": "tsc && vite build",
@@ -20,25 +17,27 @@
     "dexie": "^4.2.1",
     "dexie-react-hooks": "^4.2.0",
     "electron-is-dev": "^3.0.1",
-    "jspdf": "2.5.1",
-    "jspdf-autotable": "3.5.31",
-    "lucide-react": "^0.562.0",
-    "react": "^19.2.3",
-    "react-dom": "^19.2.3",
-    "react-router-dom": "^7.12.0",
-    "recharts": "^3.6.0",
-    "xlsx": "0.18.5"
+    "jspdf": "^2.5.1",
+    "jspdf-autotable": "^3.8.2",
+    "lucide-react": "^0.344.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.22.2",
+    "recharts": "^2.12.2",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
-    "@types/node": "^22.14.0",
-    "@vitejs/plugin-react": "^5.0.0",
-    "concurrently": "^9.1.2",
+    "@types/node": "^20.11.24",
+    "@types/react": "^18.2.61",
+    "@types/react-dom": "^18.2.19",
+    "@vitejs/plugin-react": "^4.2.1",
+    "concurrently": "^8.2.2",
     "cross-env": "^7.0.3",
-    "electron": "^34.2.0",
-    "electron-builder": "^26.0.0",
-    "typescript": "~5.8.2",
-    "vite": "^6.2.0",
-    "wait-on": "^8.0.2"
+    "electron": "^29.1.0",
+    "electron-builder": "^24.13.3",
+    "typescript": "^5.3.3",
+    "vite": "^5.1.4",
+    "wait-on": "^7.2.0"
   },
   "build": {
     "appId": "com.gstnexus.app",
@@ -48,11 +47,16 @@
       "package.json"
     ],
     "directories": {
-      "buildResources": "public"
+      "buildResources": "public",
+      "output": "release"
     },
     "win": {
-      "target": "nsis",
+      "target": "portable",
       "icon": "public/favicon.ico"
+    },
+    "portable": {
+      "artifactName": "${productName}_Portable_${version}.exe",
+      "requestExecutionLevel": "user"
     },
     "mac": {
       "target": "dmg"

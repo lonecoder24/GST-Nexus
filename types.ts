@@ -95,6 +95,7 @@ export interface Notice {
   arn?: string; // Application Reference Number (Parent grouping)
   noticeNumber: string; // Specific Reference Number (DIN/Notice No)
   noticeType: string; // Configurable Dropdown (e.g., SCN, ASMT-10)
+  caseType?: string; // NEW: Track/Category (e.g., Assessment, Demand, Rectification)
   section: string; // e.g., ASMT-10, DRC-01
   period: string; // FY 2022-23
   dateOfIssue: string; // ISO Date
