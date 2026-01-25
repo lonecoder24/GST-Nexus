@@ -84,7 +84,6 @@ export interface Taxpayer {
   registeredAddress: string;
   stateCode: string;
   // Jurisdictional Details
-  jurisdictionalAuthority?: string; // e.g. State Tax Officer / Superintendent
   stateCircle?: string; // e.g. Pune Zone 1
   centralRange?: string; // e.g. Range 5 Division 2
 }
@@ -102,7 +101,7 @@ export interface Notice {
   dueDate: string; // ISO Date
   extendedDueDate?: string;
   receivedDate: string;
-  issuingAuthority: string; // Officer Name/Designation
+  issuingAuthority: string; // Officer Name/Designation (Moved from Taxpayer)
   demandAmount: number; // Total cache
   riskLevel: RiskLevel;
   status: string; // Now a string to support configurable statuses
@@ -111,6 +110,8 @@ export interface Notice {
   tags?: string[];
   isOverdue?: boolean; // Computed
   lastCheckedDate?: string; // ISO Date - Last time the professional reviewed this case
+  linkedCaseId?: string; // NEW: To link ASMT->DRC or Appeal chains manually
+  budgetedHours?: number; // NEW: Time Planning
   
   // Legacy fields (kept for migration safety, but UI will use hearings table)
   hearingDate?: string;

@@ -247,7 +247,7 @@ const Reports: React.FC = () => {
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
                                         {circleReport.map((c, idx) => (
-                                            <tr key={idx} className="hover:bg-slate-50">
+                                            <tr key={idx} className="hover:bg-slate-50 cursor-pointer" onClick={() => navigate('/taxpayers', { state: { search: c.circle } })}>
                                                 <td className="px-6 py-4 font-bold text-slate-800">{c.circle}</td>
                                                 <td className="px-6 py-4 text-center">{c.clientCount}</td>
                                                 <td className="px-6 py-4 text-center">{c.noticeCount}</td>
@@ -277,7 +277,7 @@ const Reports: React.FC = () => {
                                                 <td className="px-6 py-4 text-xs text-slate-500 max-w-xs truncate">{c.statusStr}</td>
                                                 <td className="px-6 py-4 text-right text-green-600 font-medium">{formatCurrency(c.paid)}</td>
                                                 <td className="px-6 py-4 text-right font-bold text-slate-800">{formatCurrency(c.outstanding)}</td>
-                                                <td className="px-6 py-4 text-right"><ArrowRight size={16} className="text-slate-300 group-hover:text-blue-500 ml-auto"/></td>
+                                                <td className="px-6 py-4 text-right"><ArrowRight size={16} className="text-slate-300 group-hover:text-blue-50 ml-auto"/></td>
                                             </tr>
                                         ))}
                                     </tbody>

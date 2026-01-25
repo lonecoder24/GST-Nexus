@@ -21,7 +21,11 @@ export const parseExcelDate = (dateVal: any): string => {
     // Excel Serial Date handling (approximate 1900 epoch)
     if (typeof dateVal === 'number') {
         // 25569 is the offset for Unix epoch
-        return new Date((dateVal - 25569) * 86400 * 1000).toISOString().split('T')[0];
+        const dateObj = new Date((dateVal - 25569) * 86400 * 1000);
+        if (!isNaN(dateObj.getTime())) {
+             return dateObj.toISOString().split('T')[0];
+        }
+        return new Date().toISOString().split('T')[0]; // Fallback to today if invalid
     }
     
     const strVal = String(dateVal).trim();

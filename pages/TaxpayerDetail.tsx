@@ -15,7 +15,7 @@ const TaxpayerDetail: React.FC = () => {
 
   const [formData, setFormData] = useState<Partial<Taxpayer>>({
       gstin: '', tradeName: '', legalName: '', mobile: '', email: '', registeredAddress: '', stateCode: '',
-      jurisdictionalAuthority: '', stateCircle: '', centralRange: ''
+      stateCircle: '', centralRange: ''
   });
 
   useEffect(() => {
@@ -56,6 +56,20 @@ const TaxpayerDetail: React.FC = () => {
       }
   };
 
+  const handleGstinChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const val = e.target.value.toUpperCase();
+      let updatedFormData = { ...formData, gstin: val };
+      
+      // Auto-fill state code if GSTIN starts with 2 digits
+      if (val.length >= 2) {
+          const potentialStateCode = val.substring(0, 2);
+          if (/^\d+$/.test(potentialStateCode)) {
+              updatedFormData.stateCode = potentialStateCode;
+          }
+      }
+      setFormData(updatedFormData);
+  };
+
   return (
     <div className="max-w-3xl mx-auto space-y-6 pb-10">
        <div className="flex items-center justify-between">
@@ -76,7 +90,7 @@ const TaxpayerDetail: React.FC = () => {
                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                    <div>
                        <label className="block text-sm font-medium text-slate-700 mb-1">GSTIN <span className="text-red-500">*</span></label>
-                       <input type="text" value={formData.gstin} onChange={e => setFormData({...formData, gstin: e.target.value.toUpperCase()})} maxLength={15} 
+                       <input type="text" value={formData.gstin} onChange={handleGstinChange} maxLength={15} 
                         className="w-full p-2 border border-slate-300 rounded uppercase font-mono" required placeholder="27ABCDE1234F1Z5"/>
                    </div>
                    <div>
@@ -118,21 +132,11 @@ const TaxpayerDetail: React.FC = () => {
                     <div className="p-3 bg-purple-50 rounded-full text-purple-600"><Map size={24}/></div>
                     <div>
                         <h3 className="font-semibold text-slate-800">Jurisdictional Details</h3>
-                        <p className="text-xs text-slate-500">Mapping to Authority and Wards</p>
+                        <p className="text-xs text-slate-500">Mapping to Authority and Wards (Static)</p>
                     </div>
                </div>
 
-               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-50 p-4 rounded-lg border border-slate-200">
-                   <div>
-                       <label className="block text-xs font-bold text-slate-600 uppercase mb-1 flex items-center gap-1"><ShieldCheck size={12}/> Authority / Designation</label>
-                       <input 
-                            type="text" 
-                            placeholder="e.g. State Tax Officer"
-                            value={formData.jurisdictionalAuthority || ''} 
-                            onChange={e => setFormData({...formData, jurisdictionalAuthority: e.target.value})} 
-                            className="w-full p-2 border border-slate-300 rounded text-sm" 
-                       />
-                   </div>
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-lg border border-slate-200">
                    <div>
                        <label className="block text-xs font-bold text-slate-600 uppercase mb-1">State Circle / Ward</label>
                        <input 

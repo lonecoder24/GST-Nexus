@@ -17,9 +17,9 @@ const NoticeList: React.FC = () => {
   const bulkUploadRef = useRef<HTMLInputElement>(null);
   
   // Initialize filters
-  const initialState = location.state as { gstin?: string, defectType?: string, status?: string } | null;
+  const initialState = location.state as { gstin?: string, defectType?: string, status?: string, riskLevel?: string, assignedTo?: string } | null;
   
-  const [showAdvanced, setShowAdvanced] = useState(!!initialState?.defectType || !!initialState?.status);
+  const [showAdvanced, setShowAdvanced] = useState(!!initialState?.defectType || !!initialState?.status || !!initialState?.riskLevel || !!initialState?.assignedTo);
   const [showImportModal, setShowImportModal] = useState(false);
   const [importType, setImportType] = useState<'notice' | 'defect' | 'payment'>('notice');
   const [isBulkUploading, setIsBulkUploading] = useState(false);
@@ -27,11 +27,11 @@ const NoticeList: React.FC = () => {
   // Filter State
   const [textSearch, setTextSearch] = useState(initialState?.gstin || '');
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>(initialState?.status ? [initialState.status] : []);
-  const [selectedRisks, setSelectedRisks] = useState<string[]>([]);
+  const [selectedRisks, setSelectedRisks] = useState<string[]>(initialState?.riskLevel ? [initialState.riskLevel] : []);
   const [dateType, setDateType] = useState<'issue' | 'due'>('due');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
-  const [assignedTo, setAssignedTo] = useState('');
+  const [assignedTo, setAssignedTo] = useState(initialState?.assignedTo || '');
   
   const [selectedSection, setSelectedSection] = useState('');
   const [selectedDefectType, setSelectedDefectType] = useState(initialState?.defectType || '');
@@ -66,7 +66,15 @@ const NoticeList: React.FC = () => {
     }
     if (selectedStatuses.length > 0) result = result.filter(n => selectedStatuses.includes(n.status));
     if (selectedRisks.length > 0) result = result.filter(n => selectedRisks.includes(n.riskLevel));
-    if (assignedTo) result = result.filter(n => n.assignedTo === assignedTo);
+    
+    if (assignedTo) {
+        if (assignedTo === 'Unassigned') {
+            result = result.filter(n => !n.assignedTo || n.assignedTo === '');
+        } else {
+            result = result.filter(n => n.assignedTo === assignedTo);
+        }
+    }
+
     if (selectedSection) result = result.filter(n => n.section === selectedSection);
     if (dateFrom) result = result.filter(n => (dateType === 'due' ? n.dueDate : n.dateOfIssue) >= dateFrom);
     if (dateTo) result = result.filter(n => (dateType === 'due' ? n.dueDate : n.dateOfIssue) <= dateTo);
@@ -78,7 +86,7 @@ const NoticeList: React.FC = () => {
         result = result.filter(n => noticeIdsWithDefect.has(n.id!));
     }
     return result.sort((a, b) => new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime());
-  }, [textSearch, selectedStatuses, selectedRisks, assignedTo, dateFrom, dateTo, dateType, selectedSection, selectedDefectType, selectedCaseType, taxpayers]);
+  }, [textSearch, selectedStatuses, selectedRisks, assignedTo, dateFrom, dateTo, dateType, selectedSection, selectedDefectType, selectedCaseType]);
 
   // Actions
   const handleDelete = async (id: number) => {
@@ -475,7 +483,14 @@ const NoticeList: React.FC = () => {
                         </div>
                     </div>
 
-                    <div><label className="text-xs font-bold text-slate-500 uppercase mb-1.5 block">Assigned To</label><select className="w-full p-2.5 text-sm border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 outline-none" value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)}><option value="">All Users</option>{users?.map(u => <option key={u.id} value={u.username}>{u.fullName}</option>)}</select></div>
+                    <div>
+                        <label className="text-xs font-bold text-slate-500 uppercase mb-1.5 block">Assigned To</label>
+                        <select className="w-full p-2.5 text-sm border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 outline-none" value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)}>
+                            <option value="">All Users</option>
+                            <option value="Unassigned">Unassigned</option>
+                            {users?.map(u => <option key={u.id} value={u.username}>{u.fullName}</option>)}
+                        </select>
+                    </div>
                     <div><label className="text-xs font-bold text-slate-500 uppercase mb-2 block">Status</label><div className="space-y-1.5 max-h-40 overflow-y-auto border border-slate-200 rounded-lg p-3 bg-white">{statusOptions.map((status: string) => (<label key={status} className="flex items-center gap-2 cursor-pointer hover:bg-slate-50 p-1.5 rounded transition-colors"><input type="checkbox" checked={selectedStatuses.includes(status)} onChange={() => toggleSelection(selectedStatuses, status, setSelectedStatuses)} className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4" /><span className="text-xs font-medium text-slate-700">{status}</span></label>))}</div></div>
                 </div>
             </div>

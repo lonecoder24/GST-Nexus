@@ -3,27 +3,50 @@ const { app, BrowserWindow, screen } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
-// Replace external dependency with native Electron API to avoid ESM/CommonJS conflicts
+// Determine dev mode
 const isDev = !app.isPackaged;
 
-// PORTABLE MODE CONFIGURATION
-// If running in production (packaged), set the data path to be inside a 'Data' folder 
-// next to the executable. This ensures data stays on the USB drive.
+// --- PORTABLE DATA STORAGE CONFIGURATION ---
+/**
+ * For Portable Windows Apps:
+ * app.getPath('exe') points to the temporary extraction folder.
+ * process.env.PORTABLE_EXECUTABLE_DIR points to the actual folder where the .exe resides.
+ */
 if (!isDev) {
-  const exePath = path.dirname(process.execPath);
-  const dataPath = path.join(exePath, 'GSTNexus_Data');
-
-  if (!fs.existsSync(dataPath)) {
-    fs.mkdirSync(dataPath);
+  let baseDir;
+  
+  if (process.env.PORTABLE_EXECUTABLE_DIR) {
+    // This is the true location of the Portable .exe
+    baseDir = process.env.PORTABLE_EXECUTABLE_DIR;
+  } else {
+    // Fallback for non-portable packaged builds
+    baseDir = path.dirname(app.getPath('exe'));
   }
   
-  app.setPath('userData', dataPath);
+  const localDataPath = path.join(baseDir, 'GSTNexus_Data');
+
+  // Create the folder if it doesn't exist
+  if (!fs.existsSync(localDataPath)) {
+    try {
+      fs.mkdirSync(localDataPath, { recursive: true });
+    } catch (e) {
+      console.error("Could not create local data folder:", e);
+    }
+  }
+
+  // CRITICAL: Set the userData path before the app is ready
+  // This redirects IndexedDB, LocalStorage, and Cache to the portable folder
+  try {
+    app.setPath('userData', localDataPath);
+  } catch (e) {
+    console.error("Failed to set userData path:", e);
+  }
 }
+// -------------------------------------------
 
 function createWindow() {
   const { width, height } = screen.getPrimaryDisplay().workAreaSize;
 
-  // 1. Create the browser window.
   const win = new BrowserWindow({
     width: Math.min(1440, width),
     height: Math.min(900, height),
@@ -31,36 +54,29 @@ function createWindow() {
     icon: path.join(__dirname, 'favicon.ico'),
     webPreferences: {
       nodeIntegration: true,
-      contextIsolation: false, // Simplified for this specific offline use-case
+      contextIsolation: false, 
       enableRemoteModule: true,
-      webSecurity: false // Optional: Helps if you encounter local file CORS issues
+      webSecurity: false 
     },
-    autoHideMenuBar: true, // Hides menu bar but keeps Alt key access
-    backgroundColor: '#f1f5f9', // Matches the app bg
+    autoHideMenuBar: true,
+    backgroundColor: '#f1f5f9',
   });
 
-  // 2. Remove the default menu bar completely
   win.setMenuBarVisibility(false);
   
-  // 3. Load the app
-  // In production, Vite copies public files to dist root. 
-  // So electron.js and index.html will be siblings in the dist folder.
   const startUrl = isDev 
     ? 'http://localhost:3000' 
     : `file://${path.join(__dirname, 'index.html')}`;
 
   win.loadURL(startUrl);
 
-  // Open DevTools automatically if in Dev mode
   if (isDev) {
     win.webContents.openDevTools({ mode: 'detach' });
   }
 }
 
-// This method will be called when Electron has finished initialization
 app.whenReady().then(createWindow);
 
-// Quit when all windows are closed.
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();

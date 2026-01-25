@@ -1,18 +1,20 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
 import { Invoice, InvoiceStatus, InvoiceItem, UserRole } from '../types';
-import { Plus, Printer, Trash2, X, Save, IndianRupee, Clock, CheckCircle, FileText, Download, Calendar } from 'lucide-react';
+import { Plus, Printer, Trash2, X, Save, IndianRupee, Clock, CheckCircle, FileText, Download, Calendar, Calculator } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import StatsCard from '../components/StatsCard';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { useLocation } from 'react-router-dom';
 
 const Billing: React.FC = () => {
   const { user } = useAuth();
   const [showModal, setShowModal] = useState(false);
   const [search, setSearch] = useState('');
+  const location = useLocation();
 
   // Data Fetching
   const invoices = useLiveQuery(() => db.invoices.reverse().toArray()) || [];
@@ -31,17 +33,59 @@ const Billing: React.FC = () => {
   };
   const [formData, setFormData] = useState<Partial<Invoice>>(initialForm);
 
+  // Fetch Time Logs for the selected client to show hours worked
+  const clientTimeLogs = useLiveQuery(async () => {
+      if (!formData.gstin) return [];
+      
+      // Get all notices for this client (including closed ones if possible, but here we query by GSTIN)
+      // Note: timeSheets store noticeId. We need to map noticeId to client.
+      // Optimization: Fetch all logs, filter in memory or fetch by notice IDs.
+      // Since Dexie doesn't support complex joins easily, we'll iterate.
+      
+      const clientNotices = await db.notices.where('gstin').equals(formData.gstin).toArray();
+      const noticeIds = clientNotices.map(n => n.id!);
+      
+      const logs = await db.timeSheets.where('noticeId').anyOf(noticeIds).toArray();
+      
+      // Aggregate hours per notice
+      const hoursMap: Record<number, number> = {};
+      logs.forEach(log => {
+          hoursMap[log.noticeId] = (hoursMap[log.noticeId] || 0) + log.hoursSpent;
+      });
+      return hoursMap;
+  }, [formData.gstin]);
+
   // Derived Values
   const itemsTotal = useMemo(() => formData.items?.reduce((sum, item) => sum + (item.amount || 0), 0) || 0, [formData.items]);
   const taxAmount = itemsTotal * 0.18; // 18% GST Assumption
   const totalAmount = itemsTotal + taxAmount;
 
-  // Extract unique ARNs for selected client
-  const uniqueARNs = useMemo(() => {
+  // Handle incoming invoice generation request from Notice Detail
+  useEffect(() => {
+      if (location.state?.createFromNotice) {
+          const notice = location.state.createFromNotice;
+          
+          setFormData({
+              ...initialForm,
+              gstin: notice.gstin,
+              items: [{
+                  description: `Professional Fees for ${notice.noticeType} - Ref: ${notice.noticeNumber}`,
+                  amount: 0,
+                  noticeId: notice.id,
+                  arn: notice.arn
+              }]
+          });
+          setShowModal(true);
+          
+          // Clear state to prevent reopening on refresh
+          window.history.replaceState({}, document.title);
+      }
+  }, [location]);
+
+  // Extract unique ARNs / Notices for selected client for dropdown
+  const availableNotices = useMemo(() => {
       if (!formData.gstin) return [];
-      const clientNotices = activeNotices.filter(n => n.gstin === formData.gstin);
-      const arns = new Set(clientNotices.map(n => n.arn).filter(Boolean) as string[]);
-      return Array.from(arns);
+      return activeNotices.filter(n => n.gstin === formData.gstin);
   }, [activeNotices, formData.gstin]);
 
   // Stats
@@ -66,6 +110,18 @@ const Billing: React.FC = () => {
   const handleItemChange = (index: number, field: keyof InvoiceItem, value: any) => {
       const newItems = [...(formData.items || [])];
       newItems[index] = { ...newItems[index], [field]: value };
+      
+      // If noticeId selected via dropdown, try to sync ARN if missing
+      if (field === 'noticeId') {
+          const notice = availableNotices.find(n => n.id === parseInt(value));
+          if (notice) {
+              newItems[index].arn = notice.arn;
+              if (!newItems[index].description) {
+                  newItems[index].description = `Professional Fees - ${notice.noticeType} (${notice.noticeNumber})`;
+              }
+          }
+      }
+
       setFormData({ ...formData, items: newItems });
   };
 
@@ -76,6 +132,16 @@ const Billing: React.FC = () => {
       newItems.splice(index, 1);
       setFormData({ ...formData, items: newItems });
   };
+
+  const calculateFeeFromHours = (index: number, hours: number) => {
+      const rateStr = prompt("Enter Hourly Rate (₹):", "2500");
+      if (rateStr) {
+          const rate = parseFloat(rateStr);
+          if (!isNaN(rate)) {
+              handleItemChange(index, 'amount', hours * rate);
+          }
+      }
+  }
 
   const handleSave = async (e: React.FormEvent) => {
       e.preventDefault();
@@ -320,28 +386,47 @@ const Billing: React.FC = () => {
                         <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
                             <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Line Items</label>
                             <div className="space-y-2">
-                                {formData.items?.map((item, idx) => (
-                                    <div key={idx} className="flex gap-2 items-end">
-                                        <div className="flex-1">
-                                            <input placeholder="Description" className="w-full p-2 border rounded text-sm" value={item.description} onChange={e => handleItemChange(idx, 'description', e.target.value)} required />
-                                        </div>
-                                        <div className="w-32">
-                                            <input type="number" placeholder="Amount" className="w-full p-2 border rounded text-sm text-right" value={item.amount} onChange={e => handleItemChange(idx, 'amount', parseFloat(e.target.value) || 0)} required />
-                                        </div>
-                                        
-                                        {/* Case ID / ARN Selector */}
-                                        <div className="w-48">
-                                            <select className="w-full p-2 border rounded text-sm bg-white" value={item.arn || ''} onChange={e => handleItemChange(idx, 'arn', e.target.value || undefined)}>
-                                                <option value="">Select Case ID...</option>
-                                                {uniqueARNs.map(arn => (
-                                                    <option key={arn} value={arn}>{arn}</option>
-                                                ))}
-                                            </select>
-                                        </div>
+                                {formData.items?.map((item, idx) => {
+                                    const workedHours = item.noticeId && clientTimeLogs ? (clientTimeLogs[item.noticeId] || 0) : 0;
+                                    return (
+                                        <div key={idx} className="flex gap-2 items-end flex-wrap">
+                                            <div className="flex-1 min-w-[200px]">
+                                                <input placeholder="Description" className="w-full p-2 border rounded text-sm" value={item.description} onChange={e => handleItemChange(idx, 'description', e.target.value)} required />
+                                            </div>
+                                            
+                                            {/* Link Notice Selector */}
+                                            <div className="w-48">
+                                                <select className="w-full p-2 border rounded text-sm bg-white" value={item.noticeId || ''} onChange={e => handleItemChange(idx, 'noticeId', e.target.value || undefined)}>
+                                                    <option value="">Link Notice...</option>
+                                                    {availableNotices.map(n => (
+                                                        <option key={n.id} value={n.id}>{n.noticeNumber}</option>
+                                                    ))}
+                                                </select>
+                                                {item.noticeId && (
+                                                    <div className="text-[10px] text-blue-600 mt-1 flex items-center gap-1 font-medium">
+                                                        <Clock size={10}/> {workedHours} hrs worked
+                                                    </div>
+                                                )}
+                                            </div>
 
-                                        <button type="button" onClick={() => removeItem(idx)} className="p-2 text-red-500 hover:bg-red-50 rounded"><Trash2 size={16}/></button>
-                                    </div>
-                                ))}
+                                            <div className="w-32 relative">
+                                                <input type="number" placeholder="Amount" className="w-full p-2 border rounded text-sm text-right pr-8" value={item.amount} onChange={e => handleItemChange(idx, 'amount', parseFloat(e.target.value) || 0)} required />
+                                                {item.noticeId && workedHours > 0 && (
+                                                    <button 
+                                                        type="button" 
+                                                        onClick={() => calculateFeeFromHours(idx, workedHours)}
+                                                        className="absolute right-1 top-1.5 p-1 text-slate-400 hover:text-green-600 rounded" 
+                                                        title="Calculate Fee based on Hours"
+                                                    >
+                                                        <Calculator size={14}/>
+                                                    </button>
+                                                )}
+                                            </div>
+
+                                            <button type="button" onClick={() => removeItem(idx)} className="p-2 text-red-500 hover:bg-red-50 rounded"><Trash2 size={16}/></button>
+                                        </div>
+                                    );
+                                })}
                             </div>
                             <button type="button" onClick={addItem} className="mt-3 text-sm text-blue-600 font-medium hover:underline flex items-center gap-1"><Plus size={14}/> Add Item</button>
                         </div>

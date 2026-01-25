@@ -3,14 +3,15 @@ import React, { useState, useRef } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
 import { Plus, Search, Building, Phone, MapPin, Trash2, Edit, Upload, FileSpreadsheet, Download, X, FileText } from 'lucide-react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import { Taxpayer } from '../types';
 
 const TaxpayerList: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState(location.state?.search || '');
   const [showImportModal, setShowImportModal] = useState(false);
 
   const taxpayers = useLiveQuery(async () => {
@@ -22,7 +23,8 @@ const TaxpayerList: React.FC = () => {
       result = result.filter(t => 
         t.tradeName.toLowerCase().includes(lower) ||
         t.gstin.toLowerCase().includes(lower) ||
-        t.legalName.toLowerCase().includes(lower)
+        t.legalName.toLowerCase().includes(lower) ||
+        (t.stateCircle && t.stateCircle.toLowerCase().includes(lower))
       );
     }
     return result;
