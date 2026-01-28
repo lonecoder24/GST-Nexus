@@ -3,7 +3,7 @@ import React, { useState, useRef } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
 import { Notice, NoticeStatus, RiskLevel } from '../types';
-import { Plus, Search, Filter, Calendar, AlertCircle, X, Trash2, Upload, FileSpreadsheet, Download, Layers, Paperclip, UploadCloud, FolderOpen, Split, ChevronDown, ChevronRight, Briefcase } from 'lucide-react';
+import { Plus, Search, Filter, Calendar, AlertCircle, X, Trash2, Upload, FileSpreadsheet, Download, Layers, Paperclip, UploadCloud, FolderOpen, Split, ChevronDown, ChevronRight, Briefcase, UserPlus, CheckCircle, FileText, Gavel, ShieldAlert, CheckSquare, ArrowRight } from 'lucide-react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import { useAuth } from '../contexts/AuthContext';
@@ -19,6 +19,7 @@ const NoticeList: React.FC = () => {
   // Initialize filters
   const initialState = location.state as { gstin?: string, defectType?: string, status?: string, riskLevel?: string, assignedTo?: string } | null;
   
+  const [activeTab, setActiveTab] = useState<'proceedings' | 'orders' | 'rectification' | 'closed'>('proceedings');
   const [showAdvanced, setShowAdvanced] = useState(!!initialState?.defectType || !!initialState?.status || !!initialState?.riskLevel || !!initialState?.assignedTo);
   const [showImportModal, setShowImportModal] = useState(false);
   const [importType, setImportType] = useState<'notice' | 'defect' | 'payment'>('notice');
@@ -51,10 +52,31 @@ const NoticeList: React.FC = () => {
   const defectTypeOptions = configDefectTypes?.value || [];
   const caseTypeOptions = configCaseTypes?.value || [];
 
+  // Define Tab Logic constants
+  const ORDER_KEYWORDS = ['Order', 'DRC-07', 'ASMT-13', 'Appeal'];
+  const RECTIFICATION_KEYWORDS = ['Rectification'];
+  const CLOSED_KEYWORDS = ['Closed', 'Dropped', 'Waived'];
+
   const notices = useLiveQuery(async () => {
     let collection = db.notices.toCollection();
     let result = await collection.toArray();
     
+    // TAB FILTERING
+    if (activeTab === 'proceedings') {
+        result = result.filter(n => {
+            const isOrder = ORDER_KEYWORDS.some(k => n.noticeType.includes(k) || n.status.includes(k));
+            const isRect = RECTIFICATION_KEYWORDS.some(k => n.status.includes(k) || n.caseType?.includes(k));
+            const isClosed = CLOSED_KEYWORDS.some(k => n.status.includes(k));
+            return !isOrder && !isRect && !isClosed;
+        });
+    } else if (activeTab === 'orders') {
+        result = result.filter(n => ORDER_KEYWORDS.some(k => n.noticeType.includes(k) || n.status.includes(k)) && !n.status.includes('Closed'));
+    } else if (activeTab === 'rectification') {
+        result = result.filter(n => RECTIFICATION_KEYWORDS.some(k => n.status.includes(k) || n.caseType?.includes(k)) && !n.status.includes('Closed'));
+    } else if (activeTab === 'closed') {
+        result = result.filter(n => CLOSED_KEYWORDS.some(k => n.status.includes(k)));
+    }
+
     if (textSearch) {
       const lower = textSearch.toLowerCase();
       result = result.filter(n => 
@@ -86,9 +108,29 @@ const NoticeList: React.FC = () => {
         result = result.filter(n => noticeIdsWithDefect.has(n.id!));
     }
     return result.sort((a, b) => new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime());
-  }, [textSearch, selectedStatuses, selectedRisks, assignedTo, dateFrom, dateTo, dateType, selectedSection, selectedDefectType, selectedCaseType]);
+  }, [activeTab, textSearch, selectedStatuses, selectedRisks, assignedTo, dateFrom, dateTo, dateType, selectedSection, selectedDefectType, selectedCaseType]);
 
   // Actions
+  const handleTransition = async (id: number, type: 'Order' | 'Rectification' | 'Closed') => {
+      const timestamp = new Date().toISOString();
+      if (type === 'Order') {
+          if(confirm('Convert this notice to an Order? This will change status to "Order Passed" and move it to the Orders tab.')) {
+              await db.notices.update(id, { status: 'Order Passed', noticeType: 'DRC-07' });
+              await db.auditLogs.add({ entityType: 'Notice', entityId: id, action: 'Update', timestamp, user: user?.username || 'System', details: 'Notice converted to Order' });
+          }
+      } else if (type === 'Rectification') {
+          if(confirm('Move to Rectification? This will change status to "Rectification Filed".')) {
+              await db.notices.update(id, { status: 'Rectification Filed' });
+              await db.auditLogs.add({ entityType: 'Notice', entityId: id, action: 'Update', timestamp, user: user?.username || 'System', details: 'Notice moved to Rectification' });
+          }
+      } else if (type === 'Closed') {
+          if(confirm('Close/Waive this notice?')) {
+              await db.notices.update(id, { status: 'Closed' });
+              await db.auditLogs.add({ entityType: 'Notice', entityId: id, action: 'StatusChange', timestamp, user: user?.username || 'System', details: 'Notice Closed/Waived' });
+          }
+      }
+  };
+
   const handleDelete = async (id: number) => {
     if(confirm('Are you sure you want to delete this notice?')) {
         await db.notices.delete(id);
@@ -117,6 +159,21 @@ const NoticeList: React.FC = () => {
           for (const id of selectedIds) {
               await db.notices.update(id, { status: newStatus });
               await db.auditLogs.add({ entityType: 'Notice', entityId: id, action: 'StatusChange', timestamp, user: user?.username || 'System', details: `Bulk status change to '${newStatus}'` });
+          }
+          setSelectedIds([]);
+      }
+  };
+
+  const handleBulkAssign = async (username: string) => {
+      const label = username === '' ? 'Unassigned' : users?.find(u => u.username === username)?.fullName || username;
+      if (confirm(`Assign ${selectedIds.length} notices to ${label}?`)) {
+          const timestamp = new Date().toISOString();
+          for (const id of selectedIds) {
+              await db.notices.update(id, { assignedTo: username });
+              await db.auditLogs.add({
+                  entityType: 'Notice', entityId: id, action: 'Update', timestamp,
+                  user: user?.username || 'System', details: `Bulk assignment to ${label}`
+              });
           }
           setSelectedIds([]);
       }
@@ -390,6 +447,13 @@ const NoticeList: React.FC = () => {
             <td className="px-6 py-4 text-right align-top">
                 <div className="flex flex-col gap-2 items-end">
                     <button onClick={(e) => { e.stopPropagation(); navigate(`/notices/${notice.id}`); }} className="text-blue-600 hover:text-blue-800 text-xs font-semibold border border-blue-100 bg-blue-50 px-3 py-1.5 rounded-lg hover:bg-blue-100 transition-colors">Edit</button>
+                    {activeTab === 'proceedings' && checkPermission('edit_notices') && (
+                        <div className="flex gap-1">
+                            <button onClick={(e) => { e.stopPropagation(); handleTransition(notice.id!, 'Order'); }} className="p-1.5 bg-white border border-purple-200 text-purple-600 rounded hover:bg-purple-50 text-[10px]" title="Convert to Order"><Gavel size={14}/></button>
+                            <button onClick={(e) => { e.stopPropagation(); handleTransition(notice.id!, 'Rectification'); }} className="p-1.5 bg-white border border-orange-200 text-orange-600 rounded hover:bg-orange-50 text-[10px]" title="File Rectification"><ShieldAlert size={14}/></button>
+                            <button onClick={(e) => { e.stopPropagation(); handleTransition(notice.id!, 'Closed'); }} className="p-1.5 bg-white border border-green-200 text-green-600 rounded hover:bg-green-50 text-[10px]" title="Close/Waive"><CheckSquare size={14}/></button>
+                        </div>
+                    )}
                     {checkPermission('delete_notices') && (
                         <button onClick={(e) => { e.stopPropagation(); handleDelete(notice.id!); }} className="text-red-500 hover:text-red-700 text-xs font-medium hover:underline">Delete</button>
                     )}
@@ -414,26 +478,77 @@ const NoticeList: React.FC = () => {
         </div>
       </div>
 
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+          <div className="flex border-b border-slate-200 bg-slate-50 overflow-x-auto">
+              {[ {id: 'proceedings', label: 'Active Proceedings', icon: FileText}, {id: 'orders', label: 'Orders & Demand', icon: Gavel}, {id: 'rectification', label: 'Rectifications', icon: ShieldAlert}, {id: 'closed', label: 'Closures / Waivers', icon: CheckSquare} ].map(tab => (
+                  <button 
+                    key={tab.id} 
+                    onClick={() => setActiveTab(tab.id as any)} 
+                    className={`flex-1 py-4 text-sm font-semibold border-b-2 transition-colors flex items-center justify-center gap-2 min-w-[140px] ${activeTab === tab.id ? 'border-blue-600 text-blue-600 bg-white' : 'border-transparent text-slate-500 hover:bg-slate-100'}`}
+                  >
+                      <tab.icon size={16}/> {tab.label}
+                  </button>
+              ))}
+          </div>
+      </div>
+
       {selectedIds.length > 0 && (
-          <div className="bg-slate-900 text-white p-3 rounded-lg flex items-center justify-between shadow-lg animate-in slide-in-from-top-2">
-              <span className="font-semibold text-sm px-2 bg-slate-800 rounded py-1">{selectedIds.length} Selected</span>
-              <div className="flex items-center gap-3">
-                  <button onClick={() => bulkUploadRef.current?.click()} className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 rounded-md text-xs font-medium transition-colors">
+          <div className="bg-slate-900 text-white p-3 rounded-lg flex flex-wrap items-center justify-between shadow-lg animate-in slide-in-from-top-2 gap-4">
+              <span className="font-semibold text-sm px-2 bg-slate-800 rounded py-1 border border-slate-700">{selectedIds.length} Selected</span>
+              
+              <div className="flex flex-wrap items-center gap-3">
+                  {/* Action Group 1: Workflow */}
+                  <div className="flex items-center gap-3 bg-slate-800/50 p-1 rounded-lg border border-slate-700">
+                      {checkPermission('edit_notices') && (
+                          <>
+                              {/* Status Dropdown */}
+                              <div className="flex items-center bg-slate-700 rounded-md overflow-hidden hover:bg-slate-600 transition-colors">
+                                  <span className="px-2 text-xs text-slate-300 border-r border-slate-600 py-1.5 flex items-center gap-1.5 h-full">
+                                      <CheckCircle size={14}/> Status
+                                  </span>
+                                  <select 
+                                    className="bg-transparent text-white text-xs p-1.5 outline-none cursor-pointer w-28" 
+                                    onChange={(e) => { if (e.target.value) handleBulkStatusChange(e.target.value); e.target.value = ''; }}
+                                  >
+                                      <option value="" className="text-slate-900">Change...</option>
+                                      {statusOptions.map((s: string) => <option key={s} value={s} className="text-slate-900">{s}</option>)}
+                                  </select>
+                              </div>
+
+                              {/* Assign Dropdown */}
+                              <div className="flex items-center bg-slate-700 rounded-md overflow-hidden hover:bg-slate-600 transition-colors">
+                                  <span className="px-2 text-xs text-slate-300 border-r border-slate-600 py-1.5 flex items-center gap-1.5 h-full">
+                                      <UserPlus size={14}/> Assign
+                                  </span>
+                                  <select 
+                                    className="bg-transparent text-white text-xs p-1.5 outline-none cursor-pointer w-28" 
+                                    onChange={(e) => { handleBulkAssign(e.target.value); e.target.value = ''; }}
+                                  >
+                                      <option value="" className="text-slate-900">Assign To...</option>
+                                      <option value="" className="text-slate-900 font-bold">Unassigned</option>
+                                      {users?.map((u: any) => <option key={u.id} value={u.username} className="text-slate-900">{u.fullName}</option>)}
+                                  </select>
+                              </div>
+                          </>
+                      )}
+                  </div>
+
+                  <div className="h-6 w-px bg-slate-700 mx-1"></div>
+
+                  {/* Action Group 2: Data */}
+                  <button onClick={() => bulkUploadRef.current?.click()} className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 rounded-md text-xs font-medium transition-colors shadow-sm">
                       {isBulkUploading ? 'Uploading...' : <><Paperclip size={14}/> Attach Files</>}
                   </button>
                   <input type="file" ref={bulkUploadRef} className="hidden" multiple onChange={handleBulkUpload} />
 
-                  <div className="flex items-center bg-slate-800 rounded-md overflow-hidden border border-slate-700">
-                      <span className="px-3 text-xs text-slate-300 border-r border-slate-700 py-1.5">Set Status</span>
-                      <select className="bg-slate-800 text-white text-xs p-1.5 outline-none cursor-pointer hover:bg-slate-700" onChange={(e) => { if (e.target.value) handleBulkStatusChange(e.target.value); e.target.value = ''; }}>
-                          <option value="">Choose...</option>{statusOptions.map((s: string) => <option key={s} value={s}>{s}</option>)}
-                      </select>
-                  </div>
-                  
+                  {/* Action Group 3: Destructive */}
                   {checkPermission('delete_notices') && (
-                      <button onClick={handleBulkDelete} className="flex items-center gap-2 px-3 py-1.5 bg-red-600 hover:bg-red-700 rounded-md text-xs font-medium transition-colors"><Trash2 size={14} /> Delete</button>
+                      <button onClick={handleBulkDelete} className="flex items-center gap-2 px-3 py-1.5 bg-red-600 hover:bg-red-700 rounded-md text-xs font-medium transition-colors shadow-sm ml-2">
+                          <Trash2 size={14} /> Delete
+                      </button>
                   )}
-                  <button onClick={() => setSelectedIds([])} className="p-1.5 hover:bg-slate-800 rounded-md transition-colors"><X size={16} /></button>
+                  
+                  <button onClick={() => setSelectedIds([])} className="p-1.5 hover:bg-slate-700 rounded-md transition-colors text-slate-400 hover:text-white"><X size={16} /></button>
               </div>
           </div>
       )}
@@ -637,7 +752,7 @@ const NoticeList: React.FC = () => {
                             </div>
                             )
                         })}
-                        {!notices?.length && <div className="p-16 text-center text-slate-400"><AlertCircle size={48} className="mx-auto mb-3 opacity-50"/>No notices found. Try adjusting filters.</div>}
+                        {!notices?.length && <div className="p-16 text-center text-slate-400"><AlertCircle size={48} className="mx-auto mb-3 opacity-50"/>No notices found in {activeTab}. Try adjusting filters.</div>}
                     </>
                 )}
             </div>

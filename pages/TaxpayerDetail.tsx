@@ -4,7 +4,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
 import { Taxpayer } from '../types';
-import { Save, ArrowLeft, Building, FileText, ExternalLink, Map, ShieldCheck } from 'lucide-react';
+import { Save, ArrowLeft, Building, FileText, ExternalLink, Map, ShieldCheck, Activity } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 const TaxpayerDetail: React.FC = () => {
@@ -15,8 +15,11 @@ const TaxpayerDetail: React.FC = () => {
 
   const [formData, setFormData] = useState<Partial<Taxpayer>>({
       gstin: '', tradeName: '', legalName: '', mobile: '', email: '', registeredAddress: '', stateCode: '',
-      stateCircle: '', centralRange: ''
+      stateCircle: '', centralRange: '', status: 'Active'
   });
+
+  const statusConfig = useLiveQuery(() => db.appConfig.get({ key: 'taxpayer_statuses' }));
+  const statusOptions = statusConfig?.value || ['Active', 'Dormant', 'Suspended', 'Litigation Only', 'Closed'];
 
   useEffect(() => {
     if (!isNew && id) {
@@ -107,6 +110,23 @@ const TaxpayerDetail: React.FC = () => {
                        <label className="block text-sm font-medium text-slate-700 mb-1">Legal Name</label>
                        <input type="text" value={formData.legalName} onChange={e => setFormData({...formData, legalName: e.target.value})} 
                         className="w-full p-2 border border-slate-300 rounded" />
+                   </div>
+                   <div className="md:col-span-2">
+                       <label className="block text-sm font-medium text-slate-700 mb-1">Client Status</label>
+                       <div className="relative">
+                           <Activity size={16} className="absolute left-3 top-3 text-slate-400"/>
+                           <input 
+                                list="statusOptionsList"
+                                type="text"
+                                value={formData.status || 'Active'} 
+                                onChange={e => setFormData({...formData, status: e.target.value})}
+                                className="w-full pl-9 p-2.5 border border-slate-300 rounded bg-white outline-none focus:ring-2 focus:ring-blue-500"
+                                placeholder="Select or Type Status"
+                           />
+                           <datalist id="statusOptionsList">
+                               {statusOptions.map((s: string) => <option key={s} value={s} />)}
+                           </datalist>
+                       </div>
                    </div>
                </div>
 

@@ -21,8 +21,8 @@ export class GSTDatabase extends Dexie {
   constructor() {
     super('GSTNexusDB');
     
-    (this as any).version(16).stores({
-      taxpayers: '++id, &gstin, tradeName',
+    (this as any).version(17).stores({
+      taxpayers: '++id, &gstin, tradeName, status',
       notices: '++id, gstin, noticeNumber, arn, noticeType, caseType, status, dueDate, riskLevel, assignedTo, hearingDate, lastCheckedDate, linkedCaseId, budgetedHours',
       payments: '++id, noticeId, defectId, challanNumber, paymentDate, majorHead',
       auditLogs: '++id, entityId, timestamp, entityType',
@@ -84,8 +84,21 @@ export const seedDatabase = async () => {
           key: 'defect_types',
           value: ["ITC Mismatch (GSTR-3B vs GSTR-2A/2B)", "Short Payment (GSTR-3B vs GSTR-1)", "Ineligible ITC (Sec 17(5))", "RCM Liability (Sec 9(3)/9(4))", "Rule 86B Violation (1% Cash Payment)", "Wrong Place of Supply", "Fake Invoice / Bill Trading", "E-Way Bill Discrepancy", "Supplier Registration Cancelled", "Transitional Credit Issue", "Refund Rejection", "Others"]
       });
+      await db.appConfig.add({
+          key: 'taxpayer_statuses',
+          value: ['Active', 'Dormant', 'Suspended', 'Litigation Only', 'Closed']
+      });
       await db.appConfig.add({ key: 'user_roles', value: [UserRole.ADMIN, UserRole.SENIOR_ASSOCIATE, UserRole.ASSOCIATE] });
       await db.appConfig.add({ key: 'notification_reminder_days', value: 3 });
+  } else {
+      // Migration: Ensure new key exists for existing DBs
+      const statusConfig = await db.appConfig.get({key: 'taxpayer_statuses'});
+      if (!statusConfig) {
+          await db.appConfig.add({
+              key: 'taxpayer_statuses',
+              value: ['Active', 'Dormant', 'Suspended', 'Litigation Only', 'Closed']
+          });
+      }
   }
 
   const permCount = await db.appConfig.where('key').startsWith('perm:').count();

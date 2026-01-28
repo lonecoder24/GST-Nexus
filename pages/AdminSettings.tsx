@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
 import { UserRole, ALL_PERMISSIONS, PermissionType, User } from '../types';
-import { Trash2, UserPlus, Save, Shield, Settings, Plus, X, AlertOctagon, Users, Calculator, Calendar, ToggleLeft, ToggleRight, Info, CheckCircle, Lock, Edit2, Database, Download, Upload, Globe, Key, Wifi, MapPin, List, Bell, ChevronRight, LayoutList, CheckSquare, Split } from 'lucide-react';
+import { Trash2, UserPlus, Save, Shield, Settings, Plus, X, AlertOctagon, Users, Calculator, Calendar, ToggleLeft, ToggleRight, Info, CheckCircle, Lock, Edit2, Database, Download, Upload, Globe, Key, Wifi, MapPin, List, Bell, ChevronRight, LayoutList, CheckSquare, Split, Activity } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 const AdminSettings: React.FC = () => {
@@ -407,6 +407,7 @@ const AdminSettings: React.FC = () => {
       { key: 'notice_types', label: 'Notice Types', icon: List, placeholder: 'e.g. SCN, ASMT-10, DRC-01', description: 'Specific types of notices/forms.' },
       { key: 'notice_periods', label: 'Financial Periods', icon: Calendar, placeholder: 'e.g. FY 2023-24', description: 'Fiscal years used for tagging notices.' },
       { key: 'notice_statuses', label: 'Workflow Statuses', icon: CheckCircle, placeholder: 'e.g. Pending Review, Order Passed', description: 'Stages in the compliance workflow.' },
+      { key: 'taxpayer_statuses', label: 'Client Statuses', icon: Activity, placeholder: 'e.g. Active, Dormant, Litigation Only', description: 'Categorization for taxpayer clients.' },
       { key: 'overdue_excluded_statuses', label: 'Overdue Logic', icon: CheckSquare, placeholder: '', description: 'Select statuses that mark a case as "Resolved" to stop overdue alerts.' },
       { key: 'defect_types', label: 'Defect Types', icon: AlertOctagon, placeholder: 'e.g. ITC Mismatch, E-Way Bill', description: 'Common issues identified in notices.' },
       { key: 'user_roles', label: 'User Roles', icon: Users, placeholder: 'e.g. Manager, Partner', description: 'Roles assignable to users for permission control.' }

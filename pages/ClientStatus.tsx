@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
 import { NoticeStatus, Notice } from '../types';
-import { Search, ChevronDown, ChevronRight, CheckCircle, AlertTriangle, Clock, ExternalLink, RefreshCw, AlertOctagon, Filter, FolderOpen, FileText } from 'lucide-react';
+import { Search, ChevronDown, ChevronRight, CheckCircle, AlertTriangle, Clock, ExternalLink, RefreshCw, AlertOctagon, Filter, FolderOpen, FileText, MinusCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -35,8 +35,7 @@ const ClientStatus: React.FC = () => {
 
       const mapped = taxpayers.map(t => {
           const clientNotices = openNotices.filter(n => n.gstin === t.gstin);
-          if (clientNotices.length === 0) return null; // Skip clients with no active notices
-
+          
           // Group by ARN
           const caseGroups: Record<string, { id: string, label: string, notices: Notice[], effectiveDate: string | null, daysSince: number }> = {};
           
@@ -88,11 +87,11 @@ const ClientStatus: React.FC = () => {
               caseGroups: groupsArray,
               totalCases: groupsArray.length,
               noticeCount: clientNotices.length,
-              maxDaysSince: maxDaysSinceForClient,
+              maxDaysSince: groupsArray.length === 0 ? 0 : maxDaysSinceForClient, // If no cases, days since is 0 (compliant)
               slaBreachCount,
               hasBreach: slaBreachCount > 0
           };
-      }).filter(Boolean) as any[]; // Remove nulls
+      });
 
       // Filter
       let filtered = mapped.filter(c => 
@@ -104,8 +103,14 @@ const ClientStatus: React.FC = () => {
           filtered = filtered.filter(c => c.hasBreach);
       }
 
-      // Sort by urgency (Most days since check first)
-      return filtered.sort((a, b) => b.maxDaysSince - a.maxDaysSince);
+      // Sort: Breaches first, then Active Cases, then No Cases
+      return filtered.sort((a, b) => {
+          if (a.hasBreach && !b.hasBreach) return -1;
+          if (!a.hasBreach && b.hasBreach) return 1;
+          if (a.totalCases > 0 && b.totalCases === 0) return -1;
+          if (a.totalCases === 0 && b.totalCases > 0) return 1;
+          return 0;
+      });
 
   }, [taxpayers, openNotices, search, showBreachesOnly]);
 
@@ -134,15 +139,17 @@ const ClientStatus: React.FC = () => {
       }
   };
 
-  const getStatusColor = (days: number) => {
+  const getStatusColor = (days: number, hasCases: boolean) => {
+      if (!hasCases) return 'text-slate-500 bg-slate-100 border-slate-200';
       if (days === Infinity) return 'text-slate-500 bg-slate-100 border-slate-200'; // Never
       if (days > SLA_DAYS) return 'text-red-700 bg-red-50 border-red-200'; // Breach
       if (days > 3) return 'text-amber-700 bg-amber-50 border-amber-200'; // Warning
       return 'text-green-700 bg-green-50 border-green-200'; // Compliant
   };
 
-  const getStatusText = (days: number) => {
-      if (days === Infinity) return 'Never Checked';
+  const getStatusText = (days: number, hasCases: boolean) => {
+      if (!hasCases) return 'No Active Cases';
+      if (days === Infinity) return 'Never Reviewed';
       if (days === 0) return 'Checked Today';
       if (days === 1) return 'Checked Yesterday';
       return `${days} days ago`;
@@ -153,7 +160,7 @@ const ClientStatus: React.FC = () => {
         <div className="flex flex-col md:flex-row justify-between items-center gap-4">
             <div>
                 <h2 className="text-2xl font-bold text-slate-800">Status Tracker</h2>
-                <p className="text-slate-500 text-sm">Monitor review frequency. <span className="font-semibold text-slate-700">SLA Rule: {SLA_DAYS} Days</span>. Tracks at Case ID level.</p>
+                <p className="text-slate-500 text-sm">Monitor review frequency for all clients. <span className="font-semibold text-slate-700">SLA Rule: {SLA_DAYS} Days</span>.</p>
             </div>
             <div className="flex items-center gap-3 w-full md:w-auto">
                 <button 
@@ -199,31 +206,32 @@ const ClientStatus: React.FC = () => {
                             </>
                         ) : (
                             <>
-                                <CheckCircle size={48} className="mx-auto mb-2 opacity-20"/>
-                                <p>No active clients found matching your search.</p>
+                                <MinusCircle size={48} className="mx-auto mb-2 opacity-20"/>
+                                <p>No clients found matching your search.</p>
                             </>
                         )}
                     </div>
                 ) : (
                     clientData.map(client => {
                         const isExpanded = expandedClients.includes(client.id);
-                        const statusClass = getStatusColor(client.maxDaysSince);
-                        const isBreach = client.maxDaysSince > SLA_DAYS;
+                        const hasCases = client.totalCases > 0;
+                        const statusClass = getStatusColor(client.maxDaysSince, hasCases);
+                        const isBreach = client.maxDaysSince > SLA_DAYS && hasCases;
                         
                         return (
                             <div key={client.id} className="group">
                                 {/* Parent Row */}
                                 <div 
-                                    className={`grid grid-cols-12 px-6 py-4 items-center cursor-pointer transition-colors ${isExpanded ? 'bg-blue-50/30' : 'hover:bg-slate-50'} ${isBreach ? 'bg-red-50/10' : ''}`}
-                                    onClick={() => toggleExpand(client.id)}
+                                    className={`grid grid-cols-12 px-6 py-4 items-center transition-colors ${isExpanded ? 'bg-blue-50/30' : 'hover:bg-slate-50'} ${isBreach ? 'bg-red-50/10' : ''} ${hasCases ? 'cursor-pointer' : ''}`}
+                                    onClick={() => hasCases && toggleExpand(client.id)}
                                 >
                                     <div className="col-span-5 md:col-span-4 flex items-center gap-3">
-                                        <button className="text-slate-400 hover:text-blue-600 transition-colors">
+                                        <button className={`text-slate-400 transition-colors ${hasCases ? 'hover:text-blue-600' : 'opacity-20 cursor-default'}`}>
                                             {isExpanded ? <ChevronDown size={16}/> : <ChevronRight size={16}/>}
                                         </button>
                                         <div>
                                             <div className="flex items-center gap-2">
-                                                <h4 className="font-bold text-slate-800 text-sm">{client.tradeName}</h4>
+                                                <h4 className={`font-bold text-sm ${hasCases ? 'text-slate-800' : 'text-slate-500'}`}>{client.tradeName}</h4>
                                                 {client.hasBreach && (
                                                     <span className="text-[10px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-bold border border-red-200">
                                                         {client.slaBreachCount} Case{client.slaBreachCount > 1 ? 's' : ''} Overdue
@@ -234,31 +242,30 @@ const ClientStatus: React.FC = () => {
                                         </div>
                                     </div>
                                     <div className="col-span-3 md:col-span-2 text-center">
-                                        <span className="bg-slate-100 text-slate-700 px-2.5 py-1 rounded-full text-xs font-bold border border-slate-200" title={`${client.noticeCount} individual notices`}>
+                                        <span className={`px-2.5 py-1 rounded-full text-xs font-bold border ${hasCases ? 'bg-slate-100 text-slate-700 border-slate-200' : 'bg-slate-50 text-slate-400 border-transparent'}`} title={`${client.noticeCount} individual notices`}>
                                             {client.totalCases} {client.totalCases === 1 ? 'Case' : 'Cases'}
                                         </span>
                                     </div>
                                     <div className="col-span-4 md:col-span-4">
                                         <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${statusClass}`}>
-                                            {client.maxDaysSince > SLA_DAYS ? <AlertOctagon size={12}/> : <CheckCircle size={12}/>}
-                                            {client.maxDaysSince === Infinity ? 'Never Reviewed' : 
-                                             client.maxDaysSince > SLA_DAYS ? `SLA Breach (${client.maxDaysSince} days)` : 
-                                             client.maxDaysSince === 0 ? 'Up to Date' : 
-                                             `Checked ${getStatusText(client.maxDaysSince)}`}
+                                            {!hasCases ? <CheckCircle size={12}/> : client.maxDaysSince > SLA_DAYS ? <AlertOctagon size={12}/> : <CheckCircle size={12}/>}
+                                            {getStatusText(client.maxDaysSince, hasCases)}
                                         </div>
                                     </div>
                                     <div className="hidden md:block md:col-span-2 text-right">
-                                        <button 
-                                            onClick={(e) => { e.stopPropagation(); handleMarkAllClientChecked(client.gstin); }}
-                                            className="text-xs bg-white border border-slate-300 text-slate-700 hover:bg-blue-50 hover:text-blue-700 hover:border-blue-200 px-3 py-1.5 rounded transition-all opacity-0 group-hover:opacity-100 flex items-center gap-1 ml-auto"
-                                        >
-                                            <RefreshCw size={12}/> Review All
-                                        </button>
+                                        {hasCases && (
+                                            <button 
+                                                onClick={(e) => { e.stopPropagation(); handleMarkAllClientChecked(client.gstin); }}
+                                                className="text-xs bg-white border border-slate-300 text-slate-700 hover:bg-blue-50 hover:text-blue-700 hover:border-blue-200 px-3 py-1.5 rounded transition-all opacity-0 group-hover:opacity-100 flex items-center gap-1 ml-auto"
+                                            >
+                                                <RefreshCw size={12}/> Review All
+                                            </button>
+                                        )}
                                     </div>
                                 </div>
 
                                 {/* Child Rows (Cases/Notices) */}
-                                {isExpanded && (
+                                {isExpanded && hasCases && (
                                     <div className="bg-slate-50/50 border-y border-slate-100 px-6 py-2">
                                         <div className="ml-8 space-y-3 my-2">
                                             {client.caseGroups.map((group: any) => {
@@ -292,7 +299,7 @@ const ClientStatus: React.FC = () => {
                                                                 <div className="text-right">
                                                                     <p className="text-[10px] text-slate-400 uppercase font-bold">Review Status</p>
                                                                     <p className={`text-xs font-medium ${isCaseBreach ? 'text-red-700 font-bold' : 'text-slate-700'}`}>
-                                                                        {group.daysSince === Infinity ? 'Never Reviewed' : getStatusText(group.daysSince)}
+                                                                        {group.daysSince === Infinity ? 'Never Reviewed' : getStatusText(group.daysSince, true)}
                                                                     </p>
                                                                 </div>
                                                                 <button 

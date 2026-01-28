@@ -86,6 +86,7 @@ export interface Taxpayer {
   // Jurisdictional Details
   stateCircle?: string; // e.g. Pune Zone 1
   centralRange?: string; // e.g. Range 5 Division 2
+  status?: string; // e.g. Active, Dormant
 }
 
 export interface Notice {

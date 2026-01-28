@@ -2,7 +2,7 @@
 import React, { useState, useRef } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
-import { Plus, Search, Building, Phone, MapPin, Trash2, Edit, Upload, FileSpreadsheet, Download, X, FileText } from 'lucide-react';
+import { Plus, Search, Building, Phone, MapPin, Trash2, Edit, Upload, FileSpreadsheet, Download, X, FileText, Filter } from 'lucide-react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import { Taxpayer } from '../types';
@@ -13,11 +13,27 @@ const TaxpayerList: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [searchTerm, setSearchTerm] = useState(location.state?.search || '');
   const [showImportModal, setShowImportModal] = useState(false);
+  const [selectedStatus, setSelectedStatus] = useState('');
+
+  const statusConfig = useLiveQuery(() => db.appConfig.get({ key: 'taxpayer_statuses' }));
+  
+  // Calculate unique statuses from actual data + config
+  const uniqueStatuses = useLiveQuery(async () => {
+      const configValues = statusConfig?.value || ['Active', 'Dormant', 'Suspended', 'Litigation Only', 'Closed'];
+      const allTaxpayers = await db.taxpayers.toArray();
+      const usedStatuses = new Set(allTaxpayers.map(t => t.status).filter(s => s && s.trim() !== ''));
+      configValues.forEach((s: string) => usedStatuses.add(s));
+      return Array.from(usedStatuses).sort();
+  }, [statusConfig]);
 
   const taxpayers = useLiveQuery(async () => {
     let collection = db.taxpayers.toCollection();
     let result = await collection.toArray();
     
+    if (selectedStatus) {
+        result = result.filter(t => t.status === selectedStatus);
+    }
+
     if (searchTerm) {
       const lower = searchTerm.toLowerCase();
       result = result.filter(t => 
@@ -28,7 +44,7 @@ const TaxpayerList: React.FC = () => {
       );
     }
     return result;
-  }, [searchTerm]);
+  }, [searchTerm, selectedStatus]);
 
   const handleDelete = async (id: number) => {
       if(confirm('Are you sure? Linked notices will NOT be deleted but will lose taxpayer details.')) {
@@ -45,7 +61,8 @@ const TaxpayerList: React.FC = () => {
       stateCode: "27",
       mobile: "9876543210",
       email: "email@example.com",
-      registeredAddress: "Shop 1, Market Road, Mumbai"
+      registeredAddress: "Shop 1, Market Road, Mumbai",
+      status: "Active"
     }]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Taxpayers");
@@ -80,7 +97,8 @@ const TaxpayerList: React.FC = () => {
                     stateCode: row.stateCode?.toString() || '',
                     mobile: row.mobile?.toString() || '',
                     email: row.email || '',
-                    registeredAddress: row.registeredAddress || ''
+                    registeredAddress: row.registeredAddress || '',
+                    status: row.status || 'Active'
                 });
                 count++;
              } else {
@@ -96,6 +114,15 @@ const TaxpayerList: React.FC = () => {
       }
     };
     reader.readAsBinaryString(file);
+  };
+
+  const getStatusColor = (status?: string) => {
+      if (!status) return 'bg-slate-100 text-slate-600';
+      const s = status.toLowerCase();
+      if (s === 'active') return 'bg-green-50 text-green-700 border-green-200';
+      if (s === 'dormant') return 'bg-slate-100 text-slate-500 border-slate-200';
+      if (s === 'suspended' || s === 'closed') return 'bg-red-50 text-red-700 border-red-200';
+      return 'bg-amber-50 text-amber-700 border-amber-200';
   };
 
   return (
@@ -116,15 +143,28 @@ const TaxpayerList: React.FC = () => {
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
-          <div className="relative mb-4">
-               <Search className="absolute left-3 top-2.5 text-slate-400" size={16} />
-               <input 
-                  type="text" 
-                  placeholder="Search by Trade Name, Legal Name or GSTIN..." 
-                  className="w-full pl-9 pr-3 py-2 text-sm border border-slate-300 rounded-md focus:ring-1 focus:ring-blue-500 outline-none"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-               />
+          <div className="flex flex-col md:flex-row gap-4 mb-4">
+              <div className="relative flex-1">
+                   <Search className="absolute left-3 top-2.5 text-slate-400" size={16} />
+                   <input 
+                      type="text" 
+                      placeholder="Search by Trade Name, Legal Name or GSTIN..." 
+                      className="w-full pl-9 pr-3 py-2 text-sm border border-slate-300 rounded-md focus:ring-1 focus:ring-blue-500 outline-none"
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                   />
+              </div>
+              <div className="w-full md:w-48 relative">
+                  <Filter className="absolute left-3 top-2.5 text-slate-400" size={16} />
+                  <select 
+                    className="w-full pl-9 pr-3 py-2 text-sm border border-slate-300 rounded-md focus:ring-1 focus:ring-blue-500 outline-none bg-white"
+                    value={selectedStatus}
+                    onChange={(e) => setSelectedStatus(e.target.value)}
+                  >
+                      <option value="">All Statuses</option>
+                      {uniqueStatuses?.map((s: string) => <option key={s} value={s}>{s}</option>)}
+                  </select>
+              </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -140,7 +180,12 @@ const TaxpayerList: React.FC = () => {
                               <Building size={20}/>
                           </div>
                           <div>
-                              <h3 className="font-bold text-slate-800">{t.tradeName}</h3>
+                              <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                                  {t.tradeName}
+                                  <span className={`text-[10px] px-2 py-0.5 rounded-full border ${getStatusColor(t.status)}`}>
+                                      {t.status || 'Active'}
+                                  </span>
+                              </h3>
                               <p className="text-xs text-slate-500">{t.legalName}</p>
                           </div>
                       </div>
